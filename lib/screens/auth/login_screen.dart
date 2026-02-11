@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../data/mock_database.dart';
+import '../../services/session_service.dart';
 import '../admin/admin_home_screen.dart';
 import '../teacher/teacher_home_screen.dart';
 import '../student/student_dashboard.dart';
@@ -16,9 +17,6 @@ class _LoginScreenState extends State<LoginScreen> {
   final _loginController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isLoading = false;
-  
-  // Default selection
-  UserRole _selectedRole = UserRole.student;
 
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
@@ -29,12 +27,12 @@ class _LoginScreenState extends State<LoginScreen> {
     final user = DatabaseService().login(
       _loginController.text, 
       _passwordController.text,
-      _selectedRole
     );
 
     setState(() => _isLoading = false);
 
     if (user != null) {
+      await SessionService().saveSession(user);
       if (!mounted) return;
       Widget nextScreen;
       switch (user.role) {
@@ -57,7 +55,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Неверный логин, пароль или роль'),
+          content: Text('Неверный логин или пароль'),
           backgroundColor: Colors.red,
         ),
       );
@@ -109,36 +107,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         style: Theme.of(context).textTheme.bodyMedium,
                       ),
                       const SizedBox(height: 32),
-
-                      // Adaptive Role Selector
-                      LayoutBuilder(
-                        builder: (context, constraints) {
-                          if (constraints.maxWidth > 600) {
-                            return SegmentedButton<UserRole>(
-                              segments: const [
-                                ButtonSegment(value: UserRole.admin, label: Text('Админ'), icon: Icon(Icons.admin_panel_settings_outlined)),
-                                ButtonSegment(value: UserRole.teacher, label: Text('Преподаватель'), icon: Icon(Icons.school_outlined)),
-                                ButtonSegment(value: UserRole.student, label: Text('Студент'), icon: Icon(Icons.person_outline)),
-                              ],
-                              selected: {_selectedRole},
-                              onSelectionChanged: (Set<UserRole> newSelection) => setState(() => _selectedRole = newSelection.first),
-                            );
-                          } else {
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                _buildRoleTile(UserRole.admin, 'Администратор', Icons.admin_panel_settings_outlined),
-                                const SizedBox(height: 8),
-                                _buildRoleTile(UserRole.teacher, 'Преподаватель', Icons.school_outlined),
-                                const SizedBox(height: 8),
-                                _buildRoleTile(UserRole.student, 'Студент', Icons.person_outline),
-                              ],
-                            );
-                          }
-                        },
-                      ),
-                      
-                      const SizedBox(height: 24),
 
                       Card(
                         elevation: 4, 
@@ -194,7 +162,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           border: Border.all(color: Theme.of(context).dividerColor.withOpacity(0.1)),
                         ),
                         child: Text(
-                          _getHintText(),
+                          "Демо: root / root (админ), teacher / 123 (преподаватель)",
                           textAlign: TextAlign.center,
                           style: TextStyle(fontSize: Theme.of(context).textTheme.bodySmall?.fontSize, color: Theme.of(context).colorScheme.onSurfaceVariant),
                         ),
@@ -210,50 +178,4 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _buildRoleTile(UserRole role, String label, IconData icon) {
-    final isSelected = _selectedRole == role;
-    final colorScheme = Theme.of(context).colorScheme;
-    
-    return InkWell(
-      onTap: () => setState(() => _selectedRole = role),
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(
-          color: isSelected ? colorScheme.primary : colorScheme.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isSelected ? colorScheme.primary : colorScheme.outlineVariant,
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, color: isSelected ? colorScheme.onPrimary : colorScheme.primary),
-            const SizedBox(width: 12),
-            Text(
-              label,
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: isSelected ? colorScheme.onPrimary : colorScheme.onSurface,
-              ),
-            ),
-            const Spacer(),
-            if (isSelected)
-              Icon(Icons.check_circle, color: colorScheme.onPrimary, size: 20),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _getHintText() {
-    switch (_selectedRole) {
-      case UserRole.admin:
-        return "Демо: root / root";
-      case UserRole.teacher:
-        return "Демо: teacher / 123";
-      case UserRole.student:
-        return "Вход по данным, выданным преподавателем";
-    }
-  }
 }

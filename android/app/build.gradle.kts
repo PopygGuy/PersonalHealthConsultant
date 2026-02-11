@@ -8,7 +8,7 @@ plugins {
 android {
     namespace = "com.example.personal_health_consultant"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    // Do not pin NDK: let AGP/Flutter pick an available toolchain automatically.
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

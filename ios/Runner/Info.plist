@@ -45,5 +45,7 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSMotionUsageDescription</key>
+	<string>Приложение использует данные активности для подсчета шагов и персональной статистики.</string>
 </dict>
 </plist>

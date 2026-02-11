@@ -406,14 +406,22 @@ class DatabaseService {
     );
   }
 
-  User? login(String login, String password, UserRole role) {
+  User? login(String login, String password, {UserRole? role}) {
     try {
       return _users.firstWhere((u) => 
         u.login.toLowerCase() == login.toLowerCase() && 
         u.password == password &&
-        u.role == role
+        (role == null || u.role == role)
       );
     } catch (e) {
+      return null;
+    }
+  }
+
+  User? getUserById(String id) {
+    try {
+      return _users.firstWhere((u) => u.id == id);
+    } catch (_) {
       return null;
     }
   }

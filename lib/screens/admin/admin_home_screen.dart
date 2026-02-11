@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../data/mock_database.dart';
+import '../../services/session_service.dart';
 import '../auth/login_screen.dart';
 
 class AdminHomeScreen extends StatefulWidget {
@@ -226,10 +227,14 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                 ),
                 const SizedBox(height: 16),
                 FilledButton.icon(
-                  onPressed: () => Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(builder: (context) => const LoginScreen()),
-                  ),
+                  onPressed: () async {
+                    await SessionService().clearSession();
+                    if (!mounted) return;
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(builder: (context) => const LoginScreen()),
+                    );
+                  },
                   icon: const Icon(Icons.exit_to_app),
                   label: const Text("Выйти"),
                 ),

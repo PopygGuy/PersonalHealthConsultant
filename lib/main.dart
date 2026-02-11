@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/auth/login_screen.dart';
 import 'data/mock_database.dart'; // DatabaseService
+import 'screens/admin/admin_home_screen.dart';
+import 'screens/student/student_dashboard.dart';
+import 'screens/teacher/teacher_home_screen.dart';
+import 'services/session_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -202,8 +205,53 @@ class MyApp extends StatelessWidget {
             iconTheme: const IconThemeData(color: Color(0xFFE0E0E0)),
           ),
           
-          home: const LoginScreen(),
+          home: const _SessionGate(),
         );
+      },
+    );
+  }
+}
+
+class _SessionGate extends StatefulWidget {
+  const _SessionGate();
+
+  @override
+  State<_SessionGate> createState() => _SessionGateState();
+}
+
+class _SessionGateState extends State<_SessionGate> {
+  late final Future<User?> _sessionUserFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _sessionUserFuture = SessionService().loadSessionUser();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<User?>(
+      future: _sessionUserFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        final user = snapshot.data;
+        if (user == null) {
+          return const LoginScreen();
+        }
+
+        switch (user.role) {
+          case UserRole.admin:
+            return const AdminHomeScreen();
+          case UserRole.teacher:
+            return TeacherHomeScreen(user: user);
+          case UserRole.student:
+            return StudentDashboard(user: user);
+        }
       },
     );
   }

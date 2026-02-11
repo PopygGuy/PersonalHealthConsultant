@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../data/mock_database.dart';
+import '../../services/session_service.dart';
 import '../../widgets/responsive_wrapper.dart';
 import '../auth/login_screen.dart';
 
@@ -125,10 +126,14 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                 ),
                 const SizedBox(height: 16),
                 FilledButton.icon(
-                  onPressed: () => Navigator.of(context).pushAndRemoveUntil(
-                    MaterialPageRoute(builder: (context) => const LoginScreen()),
-                    (route) => false,
-                  ),
+                  onPressed: () async {
+                    await SessionService().clearSession();
+                    if (!mounted) return;
+                    Navigator.of(context).pushAndRemoveUntil(
+                      MaterialPageRoute(builder: (context) => const LoginScreen()),
+                      (route) => false,
+                    );
+                  },
                   icon: const Icon(Icons.exit_to_app),
                   label: const Text("Выйти"),
                 ),

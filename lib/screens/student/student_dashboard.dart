@@ -3,8 +3,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/mock_database.dart';
 import '../home_screen.dart'; // Reuse health calculator
 import '../../services/training_advisor.dart';
+import '../../services/session_service.dart';
 import '../../widgets/responsive_wrapper.dart';
 import '../auth/login_screen.dart'; // Import for logout
+import 'step_tracker_screen.dart';
 
 class StudentDashboard extends StatefulWidget {
   final User user;
@@ -47,6 +49,11 @@ class _StudentDashboardState extends State<StudentDashboard> {
           NavigationDestination(
             icon: Icon(Icons.favorite_outline),
             selectedIcon: Icon(Icons.favorite),
+            label: 'Шагомер',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.monitor_heart_outlined),
+            selectedIcon: Icon(Icons.monitor_heart),
             label: 'Здоровье',
           ),
           NavigationDestination(
@@ -63,8 +70,9 @@ class _StudentDashboardState extends State<StudentDashboard> {
     switch (_currentIndex) {
       case 0: return _buildDashboardTab();
       case 1: return _buildJournalTab();
-      case 2: return _buildHealthTab();
-      case 3: return _buildProfileTab();
+      case 2: return _buildStepsTab();
+      case 3: return _buildHealthTab();
+      case 4: return _buildProfileTab();
       default: return const Center(child: Text("Ошибка"));
     }
   }
@@ -261,6 +269,10 @@ class _StudentDashboardState extends State<StudentDashboard> {
     );
   }
 
+  Widget _buildStepsTab() {
+    return StepTrackerScreen(user: widget.user);
+  }
+
   // --- TAB 3: Health (Calculator) ---
   Widget _buildHealthTab() {
     return HomeScreen(initialUser: null); // Reusing the calculator screen
@@ -312,7 +324,9 @@ class _StudentDashboardState extends State<StudentDashboard> {
             ListTile(
               leading: const Icon(Icons.exit_to_app, color: Colors.red),
               title: const Text("Выйти", style: TextStyle(color: Colors.red)),
-              onTap: () {
+              onTap: () async {
+                await SessionService().clearSession();
+                if (!mounted) return;
                 Navigator.of(context).pushAndRemoveUntil(
                   MaterialPageRoute(builder: (context) => const LoginScreen()),
                   (route) => false,
