@@ -4,10 +4,13 @@ import '../../services/api_service.dart';
 import '../../widgets/responsive_wrapper.dart';
 import '../auth/login_screen.dart';
 import '../../models/user.dart';
+import '../../models/user_role.dart';
 import '../../models/faculty.dart';
 import '../../models/group.dart';
 import '../../models/norm.dart';
 import '../../models/grade.dart';
+import '../../widgets/user_avatar.dart';
+import '../../widgets/app_theme_selector_card.dart';
 
 class TeacherHomeScreen extends StatefulWidget {
   final User user;
@@ -243,8 +246,11 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
               children: [
                 Card(
                   child: ListTile(
-                    leading: CircleAvatar(
-                      child: Text(widget.user.fullName.isNotEmpty ? widget.user.fullName[0].toUpperCase() : "П"),
+                    leading: UserAvatar(
+                      displayName: widget.user.fullName,
+                      seed: widget.user.id.isNotEmpty ? widget.user.id : widget.user.login,
+                      role: UserRole.teacher,
+                      radius: 18,
                     ),
                     title: Text(widget.user.fullName, style: const TextStyle(fontWeight: FontWeight.w700)),
                     subtitle: Text("Логин: ${widget.user.login}"),
@@ -265,6 +271,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                     ),
                   ),
                 ),
+                const SizedBox(height: 16),
+                const AppThemeSelectorCard(),
                 const SizedBox(height: 16),
                 FilledButton.icon(
                   onPressed: () async {
@@ -418,8 +426,10 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
         padding: const EdgeInsets.all(12),
         child: Row(
           children: [
-            CircleAvatar(
-              child: Text(s.fullName.isNotEmpty ? s.fullName[0] : "?"),
+            UserAvatar(
+              displayName: s.fullName,
+              seed: s.id.isNotEmpty ? s.id : s.login,
+              role: UserRole.student,
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -562,7 +572,16 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                      decoration: const InputDecoration(labelText: "Факультет", prefixIcon: Icon(Icons.domain_outlined)),
                      items: [
                        const DropdownMenuItem<String>(value: null, child: Text("Все факультеты")),
-                       ..._faculties.map((f) => DropdownMenuItem<String>(value: f.id, child: Text(f.name, overflow: TextOverflow.ellipsis))),
+                      ..._faculties.map(
+                        (f) => DropdownMenuItem<String>(
+                          value: f.id,
+                          child: Text(
+                            f.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
                      ],
                      onChanged: (value) => setState(() {
                          _historyFilterFacultyId = value;
@@ -577,8 +596,19 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                      decoration: const InputDecoration(labelText: "Направление / группа", prefixIcon: Icon(Icons.groups_outlined)),
                      items: [
                        const DropdownMenuItem<String>(value: null, child: Text("Все направления")),
-                       ...(_historyFilterFacultyId == null ? _groups : _groups.where((g) => g.facultyId == _historyFilterFacultyId))
-                           .map((g) => DropdownMenuItem<String>(value: g.id, child: Text(g.name, overflow: TextOverflow.ellipsis))),
+                      ...(_historyFilterFacultyId == null
+                              ? _groups
+                              : _groups.where((g) => g.facultyId == _historyFilterFacultyId))
+                          .map(
+                            (g) => DropdownMenuItem<String>(
+                              value: g.id,
+                              child: Text(
+                                g.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ),
                      ],
                      onChanged: (value) => setState(() {
                          _historyFilterGroupId = value;
@@ -592,7 +622,16 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                      decoration: const InputDecoration(labelText: "Студент", prefixIcon: Icon(Icons.person_outline)),
                      items: [
                        const DropdownMenuItem<String>(value: null, child: Text("Все студенты")),
-                       ...studentsForDropdown.map((s) => DropdownMenuItem<String>(value: s.id, child: Text(s.fullName, overflow: TextOverflow.ellipsis))),
+                      ...studentsForDropdown.map(
+                        (s) => DropdownMenuItem<String>(
+                          value: s.id,
+                          child: Text(
+                            s.fullName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
                      ],
                      onChanged: (value) => setState(() => _historyFilterStudentId = value),
                    ),
@@ -603,7 +642,16 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                      decoration: const InputDecoration(labelText: "Норматив", prefixIcon: Icon(Icons.rule_outlined)),
                      items: [
                        const DropdownMenuItem<String>(value: null, child: Text("Все нормативы")),
-                       ..._norms.map((n) => DropdownMenuItem<String>(value: n.id, child: Text(n.name, overflow: TextOverflow.ellipsis))),
+                      ..._norms.map(
+                        (n) => DropdownMenuItem<String>(
+                          value: n.id,
+                          child: Text(
+                            n.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
                      ],
                      onChanged: (value) => setState(() => _historyFilterNormId = value),
                    ),
@@ -872,7 +920,16 @@ class _GradeFormState extends State<_GradeForm> {
           decoration: const InputDecoration(labelText: "Факультет", prefixIcon: Icon(Icons.domain_outlined)),
           items: [
             const DropdownMenuItem<String>(value: null, child: Text("Все факультеты")),
-            ...widget.faculties.map((f) => DropdownMenuItem(value: f.id, child: Text(f.name, overflow: TextOverflow.ellipsis))),
+            ...widget.faculties.map(
+              (f) => DropdownMenuItem(
+                value: f.id,
+                child: Text(
+                  f.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
           ],
           onChanged: (v) => setState(() {
             _selectedFacultyId = v;
@@ -887,7 +944,16 @@ class _GradeFormState extends State<_GradeForm> {
           decoration: const InputDecoration(labelText: "Направление / группа", prefixIcon: Icon(Icons.groups_outlined)),
           items: [
             const DropdownMenuItem<String>(value: null, child: Text("Все направления")),
-            ...groupsForFaculty.map((g) => DropdownMenuItem(value: g.id, child: Text(g.name, overflow: TextOverflow.ellipsis))),
+            ...groupsForFaculty.map(
+              (g) => DropdownMenuItem(
+                value: g.id,
+                child: Text(
+                  g.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
           ],
           onChanged: (v) => setState(() {
             _selectedGroupId = v;
@@ -898,14 +964,36 @@ class _GradeFormState extends State<_GradeForm> {
         DropdownButtonFormField<String>(
           isExpanded: true,
           decoration: const InputDecoration(labelText: "Студент", prefixIcon: Icon(Icons.person)),
-          items: filteredStudents.map((s) => DropdownMenuItem(value: s.id, child: Text(s.fullName, overflow: TextOverflow.ellipsis))).toList(),
+          items: filteredStudents
+              .map(
+                (s) => DropdownMenuItem(
+                  value: s.id,
+                  child: Text(
+                    s.fullName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              )
+              .toList(),
           onChanged: (v) => setState(() => _selectedStudentId = v),
         ),
         const SizedBox(height: 16),
         DropdownButtonFormField<String>(
           isExpanded: true,
           decoration: const InputDecoration(labelText: "Норматив", prefixIcon: Icon(Icons.rule)),
-          items: widget.norms.map((n) => DropdownMenuItem(value: n.id, child: Text(n.name, overflow: TextOverflow.ellipsis))).toList(),
+          items: widget.norms
+              .map(
+                (n) => DropdownMenuItem(
+                  value: n.id,
+                  child: Text(
+                    n.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              )
+              .toList(),
           onChanged: (v) => setState(() => _selectedNormId = v),
         ),
         const SizedBox(height: 16),

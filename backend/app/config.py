@@ -1,10 +1,20 @@
 import os
+from pathlib import Path
 from typing import List
 from pydantic_settings import BaseSettings
 
+
+def _default_database_url() -> str:
+    # Use a deterministic project-local SQLite path to avoid
+    # cwd-dependent DB splits (./phc.db vs ./backend/phc.db).
+    backend_root = Path(__file__).resolve().parents[1]
+    sqlite_path = (backend_root / "phc.db").as_posix()
+    return f"sqlite:///{sqlite_path}"
+
+
 class Settings(BaseSettings):
     # Default to SQLite for easy local dev without Docker
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./phc.db")
+    DATABASE_URL: str = os.getenv("DATABASE_URL", _default_database_url())
     SECRET_KEY: str = os.getenv("SECRET_KEY", "supersecretkey")
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30

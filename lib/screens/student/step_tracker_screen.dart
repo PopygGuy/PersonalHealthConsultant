@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:pedometer/pedometer.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../services/step_tracker_service.dart';
 import '../../models/user.dart';
@@ -246,6 +247,16 @@ class _StepTrackerScreenState extends State<StepTrackerScreen> {
                     icon: const Icon(Icons.straighten),
                     label: Text('Длина шага: $strideCm см'),
                   ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: _openHeightSettings,
+                    icon: const Icon(Icons.height),
+                    label: Text(
+                      _stats.profileHeightCm == null
+                          ? 'Рост: не указан'
+                          : 'Рост: ${_stats.profileHeightCm} см',
+                    ),
+                  ),
                   const SizedBox(height: 4),
                   Text(
                     'Источник: $strideSource',
@@ -417,6 +428,77 @@ class _StepTrackerScreenState extends State<StepTrackerScreen> {
       _stats = _stats.copyWith(
         strideMeters: strideMeters,
         isCustomStride: true,
+      );
+    });
+    await _saveStoredStats();
+  }
+
+  Future<void> _openHeightSettings() async {
+    final controller = TextEditingController(text: _stats.profileHeightCm?.toString() ?? '');
+    final result = await showDialog<int?>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Рост'),
+          content: TextField(
+            controller: controller,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              hintText: 'Введите рост',
+              suffixText: 'см',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Отмена'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, -1),
+              child: const Text('Очистить'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, int.tryParse(controller.text.trim())),
+              child: const Text('Сохранить'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (result == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    final key = StepTrackerService.profileHeightKey(widget.user.id);
+
+    if (result == -1) {
+      await prefs.remove(key);
+      setState(() {
+        _stats = _stats.copyWith(
+          clearProfileHeight: true,
+          strideMeters: _stats.isCustomStride
+              ? _stats.strideMeters
+              : StepTrackerService.estimateStrideMetersFromHeightCm(null),
+        );
+      });
+      await _saveStoredStats();
+      return;
+    }
+
+    if (!StepTrackerService.isValidHeightCm(result)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Рост должен быть от 120 до 230 см')),
+      );
+      return;
+    }
+
+    await prefs.setInt(key, result);
+    setState(() {
+      _stats = _stats.copyWith(
+        profileHeightCm: result,
+        strideMeters: _stats.isCustomStride
+            ? _stats.strideMeters
+            : StepTrackerService.estimateStrideMetersFromHeightCm(result),
       );
     });
     await _saveStoredStats();

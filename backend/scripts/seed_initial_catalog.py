@@ -110,7 +110,7 @@ LEGACY_NORMS = [
 ]
 
 
-def seed_catalog() -> None:
+def seed_catalog() -> dict:
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
 
@@ -158,6 +158,15 @@ def seed_catalog() -> None:
         total_groups = db.query(models.Group).count()
         total_norms = db.query(models.Norm).count()
 
+        result = {
+            "added_faculties": int(added_faculties),
+            "added_groups": int(added_groups),
+            "relinked_groups": int(linked_groups_to_new_faculty),
+            "added_norms": int(added_norms),
+            "total_faculties": int(total_faculties),
+            "total_groups": int(total_groups),
+            "total_norms": int(total_norms),
+        }
         print(
             "Seed done. "
             f"Added faculties: {added_faculties}, "
@@ -166,6 +175,7 @@ def seed_catalog() -> None:
             f"added norms: {added_norms}. "
             f"Totals -> faculties: {total_faculties}, groups: {total_groups}, norms: {total_norms}"
         )
+        return result
     finally:
         db.close()
 

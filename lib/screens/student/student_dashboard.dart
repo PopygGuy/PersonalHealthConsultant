@@ -12,6 +12,10 @@ import '../../models/user.dart';
 import '../../models/grade.dart';
 import '../../models/norm.dart';
 import '../../models/user_role.dart';
+import '../../models/faculty.dart';
+import '../../models/group.dart';
+import '../../widgets/user_avatar.dart';
+import '../../widgets/app_theme_selector_card.dart';
 
 class StudentDashboard extends StatefulWidget {
   final User user;
@@ -26,26 +30,35 @@ class _StudentDashboardState extends State<StudentDashboard> {
   final _api = ApiService();
   final _stepService = const StepTrackerService();
   late final StepTrackerStorage _stepStorage; // Use late initialization
+  late User _currentUser;
   
   // Data State
   List<Grade> _grades = [];
   List<Norm> _norms = [];
+  List<Faculty> _faculties = [];
+  List<Group> _groups = [];
   bool _isLoading = true;
 
   String? _selectedMood;
   String? _moodAdvice;
-  int? _heightCm;
   StepTrackerStats? _stepSummary;
   bool _stepSummaryLoading = true;
 
   @override
   void initState() {
     super.initState();
+    _currentUser = widget.user;
     _stepStorage = ApiStepTrackerStorage(api: _api);
+    _loadCurrentUser();
     _loadData();
     _loadMoodStateForToday();
-    _loadProfileMetrics();
     _loadStepSummary();
+  }
+
+  Future<void> _loadCurrentUser() async {
+    final me = await _api.getMe();
+    if (!mounted || me == null) return;
+    setState(() => _currentUser = me);
   }
 
   Future<void> _loadData() async {
@@ -53,10 +66,14 @@ class _StudentDashboardState extends State<StudentDashboard> {
     try {
       final grades = await _api.getGrades(studentId: widget.user.id);
       final norms = await _api.getNorms();
+      final faculties = await _api.getFaculties();
+      final groups = await _api.getGroups();
 
       setState(() {
         _grades = grades;
         _norms = norms;
+        _faculties = faculties;
+        _groups = groups;
         _isLoading = false;
       });
     } catch (e) {
@@ -195,7 +212,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
     return CustomScrollView(
       slivers: [
         _buildSliverAppBar(
-          "Привет, ${widget.user.fullName.split(' ')[0]}!",
+          "Привет, ${_currentUser.fullName.split(' ')[0]}!",
           icon: Icons.dashboard_outlined,
           subtitle: "Главная сводка по нормативам и активности",
         ),
@@ -446,7 +463,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
 
   Widget _buildStepsTab() {
     return StepTrackerScreen(
-      user: widget.user,
+      user: _currentUser,
       stepTrackerStorage: _stepStorage, // Pass the API storage
     );
   }
@@ -473,45 +490,33 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 Center(
                   child: Column(
                     children: [
-                      CircleAvatar(
+                      UserAvatar(
+                        displayName: _currentUser.fullName,
+                        seed: _currentUser.id.isNotEmpty ? _currentUser.id : _currentUser.login,
+                        role: UserRole.student,
                         radius: 40,
-                        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-                        child: Text(
-                          widget.user.fullName.isNotEmpty ? widget.user.fullName[0] : "?",
-                          style: TextStyle(fontSize: 32, color: Theme.of(context).colorScheme.onPrimaryContainer),
-                        ),
                       ),
                       const SizedBox(height: 16),
                       Text(
-                        widget.user.fullName,
+                        _currentUser.fullName,
                         style: Theme.of(context).textTheme.titleLarge,
                         textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: 8),
                       Chip(
-                        label: Text(widget.user.role == UserRole.student ? "Студент" : "Пользователь"),
+                        label: Text(_currentUser.role == UserRole.student ? "Студент" : "Пользователь"),
                         backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
                       ),
                     ],
                   ),
                 ),
                 const SizedBox(height: 32),
-                _buildProfileItem(Icons.school, "Факультет", widget.user.faculty ?? "Не указан"),
-                _buildProfileItem(Icons.class_, "Группа", widget.user.group ?? "Не указана"),
-                _buildProfileItem(Icons.login, "Логин", widget.user.login),
-                ListTile(
-                  leading: Icon(Icons.height, color: Theme.of(context).colorScheme.primary),
-                  title: Text("Рост", style: Theme.of(context).textTheme.bodySmall),
-                  subtitle: Text(
-                    _heightCm == null ? "Не указан" : "$_heightCm см",
-                    style: const TextStyle(fontSize: 16),
-                  ),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.edit_outlined),
-                    onPressed: _editHeight,
-                  ),
-                ),
+                _buildProfileItem(Icons.school, "Факультет", _resolveFacultyName()),
+                _buildProfileItem(Icons.class_, "Группа", _resolveGroupName()),
+                _buildProfileItem(Icons.login, "Логин", _currentUser.login),
                 const Divider(height: 32),
+                const AppThemeSelectorCard(),
+                const SizedBox(height: 12),
                 ListTile(
                   leading: const Icon(Icons.privacy_tip_outlined),
                   title: const Text("Приватность"),
@@ -649,6 +654,32 @@ class _StudentDashboardState extends State<StudentDashboard> {
     );
   }
 
+  String _resolveFacultyName() {
+    if (_currentUser.faculty != null && _currentUser.faculty!.trim().isNotEmpty) {
+      return _currentUser.faculty!;
+    }
+    final facultyId = _currentUser.facultyId;
+    if (facultyId == null || facultyId.isEmpty) return 'Не указан';
+    final faculty = _faculties.where((f) => f.id == facultyId).cast<Faculty?>().firstWhere(
+          (f) => f != null,
+          orElse: () => null,
+        );
+    return faculty?.name ?? 'Не указан';
+  }
+
+  String _resolveGroupName() {
+    if (_currentUser.group != null && _currentUser.group!.trim().isNotEmpty) {
+      return _currentUser.group!;
+    }
+    final groupId = _currentUser.groupId;
+    if (groupId == null || groupId.isEmpty) return 'Не указана';
+    final group = _groups.where((g) => g.id == groupId).cast<Group?>().firstWhere(
+          (g) => g != null,
+          orElse: () => null,
+        );
+    return group?.name ?? 'Не указана';
+  }
+
   Color _getScoreColor(int score) {
     if (score >= 4) return Colors.green;
     if (score == 3) return Colors.orange;
@@ -724,13 +755,6 @@ class _StudentDashboardState extends State<StudentDashboard> {
     });
   }
 
-  Future<void> _loadProfileMetrics() async {
-    final prefs = await SharedPreferences.getInstance();
-    final height = prefs.getInt(StepTrackerService.profileHeightKey(widget.user.id));
-    if (!mounted) return;
-    setState(() => _heightCm = height);
-  }
-
   Future<void> _loadStepSummary() async {
     setState(() => _stepSummaryLoading = true);
     final stats = await _stepStorage.load(
@@ -744,60 +768,4 @@ class _StudentDashboardState extends State<StudentDashboard> {
     });
   }
 
-  Future<void> _editHeight() async {
-    final controller = TextEditingController(text: _heightCm?.toString() ?? '');
-    final result = await showDialog<int?>(
-      context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          title: const Text('Рост'),
-          content: TextField(
-            controller: controller,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              hintText: 'Введите рост',
-              suffixText: 'см',
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Отмена'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, -1),
-              child: const Text('Очистить'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, int.tryParse(controller.text.trim())),
-              child: const Text('Сохранить'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (result == null) return;
-
-    final prefs = await SharedPreferences.getInstance();
-    final key = StepTrackerService.profileHeightKey(widget.user.id);
-    if (result == -1) {
-      await prefs.remove(key);
-      if (!mounted) return;
-      setState(() => _heightCm = null);
-      return;
-    }
-
-    if (!StepTrackerService.isValidHeightCm(result)) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Рост должен быть от 120 до 230 см')),
-      );
-      return;
-    }
-
-    await prefs.setInt(key, result);
-    if (!mounted) return;
-    setState(() => _heightCm = result);
-  }
 }

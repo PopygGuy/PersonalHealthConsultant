@@ -6,7 +6,7 @@ from datetime import timedelta
 from .database import get_db
 from . import models, schemas, auth
 from .config import settings
-from .routers import structures, users, norms, grades, steps
+from .routers import structures, users, norms, grades, steps, maintenance
 
 app = FastAPI(title="Personal Health Consultant API")
 
@@ -25,6 +25,7 @@ app.include_router(users.router, tags=["users"])
 app.include_router(norms.router, tags=["norms"])
 app.include_router(grades.router, tags=["grades"])
 app.include_router(steps.router, tags=["steps"])
+app.include_router(maintenance.router, tags=["maintenance"])
 
 @app.post("/token")
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):

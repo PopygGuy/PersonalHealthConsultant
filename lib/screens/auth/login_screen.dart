@@ -135,6 +135,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
     return Scaffold(
       // Remove hardcoded background color to allow theme adaptation
       body: LayoutBuilder(
@@ -155,13 +158,31 @@ class _LoginScreenState extends State<LoginScreen> {
                       Container(
                         padding: const EdgeInsets.all(20),
                         decoration: BoxDecoration(
-                          color: Theme.of(context).primaryColor.withOpacity(0.1),
+                          color: isDark
+                              ? theme.colorScheme.primaryContainer.withOpacity(0.28)
+                              : theme.colorScheme.primary.withOpacity(0.12),
                           shape: BoxShape.circle,
+                          border: Border.all(
+                            color: isDark
+                                ? theme.colorScheme.primary.withOpacity(0.55)
+                                : theme.colorScheme.primary.withOpacity(0.20),
+                          ),
+                          boxShadow: isDark
+                              ? [
+                                  BoxShadow(
+                                    color: theme.colorScheme.primary.withOpacity(0.20),
+                                    blurRadius: 18,
+                                    spreadRadius: 1,
+                                  ),
+                                ]
+                              : null,
                         ),
                         child: Icon(
                           Icons.fact_check_outlined,
                           size: 64,
-                          color: Theme.of(context).primaryColor,
+                          color: isDark
+                              ? theme.colorScheme.onPrimaryContainer
+                              : theme.colorScheme.primary,
                         ),
                       ),
                       const SizedBox(height: 24),
@@ -175,7 +196,11 @@ class _LoginScreenState extends State<LoginScreen> {
                       Text(
                         'Платформа оценки нормативов студентов\nи развития физической формы',
                         textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodyMedium,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: isDark
+                              ? theme.colorScheme.onSurface.withOpacity(0.90)
+                              : theme.colorScheme.onSurfaceVariant,
+                        ),
                       ),
                       const SizedBox(height: 32),
 

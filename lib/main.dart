@@ -7,10 +7,12 @@ import 'services/session_service.dart';
 import 'models/user.dart';
 import 'models/user_role.dart';
 import 'services/api_service.dart';
+import 'services/app_theme_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await ApiService().init();
+  await AppThemeService().load();
   runApp(const MyApp());
 }
 
@@ -59,10 +61,12 @@ class MyApp extends StatelessWidget {
           maxValue: 30, // Increased from 28
         );
 
-        return MaterialApp(
+        return ValueListenableBuilder<ThemeMode>(
+          valueListenable: AppThemeService().themeModeNotifier,
+          builder: (context, selectedThemeMode, _) => MaterialApp(
           title: 'Health Consultant',
           debugShowCheckedModeBanner: false,
-          themeMode: ThemeMode.light, // Force Light Theme per user request
+          themeMode: selectedThemeMode,
           
           // --- LIGHT THEME ---
           theme: ThemeData(
@@ -218,7 +222,8 @@ class MyApp extends StatelessWidget {
           ),
           
           home: const _SessionGate(),
-        );
+        ),
+      );
       },
     );
   }

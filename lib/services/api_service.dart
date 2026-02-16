@@ -107,23 +107,33 @@ class ApiService {
         final data = response.data;
         _token = data['access_token'];
         await _storage.write(key: _jwtTokenKey, value: _token);
+        // Immediately fetch full profile (with faculty/group ids and names).
+        final me = await getMe();
+        if (me != null) {
+          return me;
+        }
 
-        // Map response to User object
-        // The backend returns {access_token, token_type, role, id, full_name}
+        // Fallback to token payload mapping if /users/me is unavailable.
         final roleStr = data['role'] as String;
         UserRole role;
-        if (roleStr == 'admin') role = UserRole.admin;
-        else if (roleStr == 'teacher') role = UserRole.teacher;
-        else role = UserRole.student;
+        if (roleStr == 'admin') {
+          role = UserRole.admin;
+        } else if (roleStr == 'teacher') {
+          role = UserRole.teacher;
+        } else {
+          role = UserRole.student;
+        }
 
         _currentUser = User(
           id: data['id'],
           login: username,
-          password: '', // Don't store password
+          password: '',
           role: role,
           fullName: data['full_name'],
-          faculty: null, // Fetch if needed
-          group: null, // Fetch if needed
+          facultyId: data['faculty_id'],
+          groupId: data['group_id'],
+          faculty: data['faculty'],
+          group: data['group'],
         );
         return _currentUser;
       }
@@ -147,6 +157,10 @@ class ApiService {
 
   Future<Response> post(String path, dynamic data) async {
     return _dio.post(path, data: data, options: Options(headers: {'Authorization': 'Bearer $_token'}));
+  }
+
+  Future<Response> put(String path, dynamic data) async {
+    return _dio.put(path, data: data, options: Options(headers: {'Authorization': 'Bearer $_token'}));
   }
 
   Future<Response> delete(String path) async {
@@ -220,6 +234,27 @@ class ApiService {
     }
   }
 
+  Future<Map<String, dynamic>> repairCatalog() async {
+    try {
+      final response = await post('/admin/maintenance/repair-catalog', {});
+      if (response.data is Map<String, dynamic>) {
+        return response.data as Map<String, dynamic>;
+      }
+      return const {
+        'ok': true,
+        'message': 'Справочники восстановлены',
+      };
+    } on DioException catch (e) {
+      final detail = e.response?.data is Map<String, dynamic>
+          ? (e.response?.data['detail']?.toString() ?? 'Ошибка восстановления справочников')
+          : 'Ошибка восстановления справочников';
+      throw Exception(detail);
+    } catch (e) {
+      print('repairCatalog error: $e');
+      throw Exception('Ошибка восстановления справочников');
+    }
+  }
+
   Future<List<User>> getUsers({String? role}) async {
     try {
       final path = role != null ? '/users?role=$role' : '/users';
@@ -249,9 +284,14 @@ class ApiService {
         'group_id': groupId,
       });
       return User.fromJson(response.data);
+    } on DioException catch (e) {
+      final detail = e.response?.data is Map<String, dynamic>
+          ? (e.response?.data['detail']?.toString() ?? 'Ошибка создания пользователя')
+          : 'Ошибка создания пользователя';
+      throw Exception(detail);
     } catch (e) {
       print('createUser error: $e');
-      return null;
+      throw Exception('Ошибка создания пользователя');
     }
   }
 
@@ -262,6 +302,30 @@ class ApiService {
     } catch (e) {
       print('deleteUser error: $e');
       return false;
+    }
+  }
+
+  Future<User?> updateUser({
+    required String id,
+    String? fullName,
+    String? password,
+    String? facultyId,
+    String? groupId,
+  }) async {
+    try {
+      final response = await put('/users/$id', {
+        'full_name': fullName,
+        'password': password,
+        'faculty_id': facultyId,
+        'group_id': groupId,
+      });
+      return User.fromJson(response.data);
+    } on DioException catch (e) {
+      print('updateUser error: ${e.response?.data ?? e.message}');
+      return null;
+    } catch (e) {
+      print('updateUser error: $e');
+      return null;
     }
   }
 

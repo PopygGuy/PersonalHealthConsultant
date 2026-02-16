@@ -6,6 +6,8 @@ import '../../models/user.dart';
 import '../../models/faculty.dart';
 import '../../models/group.dart';
 import '../../models/user_role.dart';
+import '../../widgets/user_avatar.dart';
+import '../../widgets/app_theme_selector_card.dart';
 
 class AdminHomeScreen extends StatefulWidget {
   const AdminHomeScreen({super.key});
@@ -28,6 +30,8 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   List<Faculty> _faculties = [];
   List<Group> _groups = [];
   bool _isLoading = true;
+  bool _isRepairingCatalog = false;
+  Map<String, dynamic>? _lastCatalogRepairReport;
 
   @override
   void initState() {
@@ -163,7 +167,10 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   String? _validateLogin(String? value) {
     final login = value?.trim() ?? '';
     if (login.isEmpty) return 'Введите логин';
-    if (login.length < 3) return 'Логин должен быть не короче 3 символов';
+    final loginRegex = RegExp(r'^[a-zA-Z0-9._]{3,32}$');
+    if (!loginRegex.hasMatch(login)) {
+      return 'Логин: 3-32 символа, латиница/цифры/._';
+    }
     return null;
   }
 
@@ -183,6 +190,38 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   String? _validateNotEmpty(String? value, String label) {
     if (value == null || value.trim().isEmpty) return 'Введите $label';
     return null;
+  }
+
+  String _normalizeFacultyName(String name) {
+    return name
+        .toLowerCase()
+        .replaceAll('факультет', '')
+        .replaceAll(RegExp(r'[\s\-_]+'), ' ')
+        .trim();
+  }
+
+  List<Group> _groupsForFacultyId(String? facultyId) {
+    if (facultyId == null || facultyId.isEmpty) return [];
+    final direct = _groups.where((g) => g.facultyId == facultyId).toList();
+    if (direct.isNotEmpty) return direct;
+
+    // Fallback for duplicated faculty rows with same semantic name.
+    final selected = _faculties.firstWhere(
+      (f) => f.id == facultyId,
+      orElse: () => Faculty(id: '', name: ''),
+    );
+    if (selected.id.isEmpty || selected.name.trim().isEmpty) return direct;
+
+    final selectedNorm = _normalizeFacultyName(selected.name);
+    if (selectedNorm.isEmpty) return direct;
+
+    final sameSemanticFacultyIds = _faculties
+        .where((f) => _normalizeFacultyName(f.name) == selectedNorm)
+        .map((f) => f.id)
+        .toSet();
+    if (sameSemanticFacultyIds.isEmpty) return direct;
+
+    return _groups.where((g) => sameSemanticFacultyIds.contains(g.facultyId)).toList();
   }
 
   // --- REUSABLE SLIVER HEADER ---
@@ -278,6 +317,73 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
+                const AppThemeSelectorCard(),
+                const SizedBox(height: 16),
+                FilledButton.icon(
+                  onPressed: _isRepairingCatalog
+                      ? null
+                      : () async {
+                          setState(() => _isRepairingCatalog = true);
+                          try {
+                            final report = await _api.repairCatalog();
+                            await _loadData();
+                            if (!mounted) return;
+                            setState(() => _lastCatalogRepairReport = report);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  report['message']?.toString() ??
+                                      'Справочники восстановлены',
+                                ),
+                              ),
+                            );
+                          } catch (e) {
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  e.toString().replaceFirst('Exception: ', ''),
+                                ),
+                              ),
+                            );
+                          } finally {
+                            if (mounted) {
+                              setState(() => _isRepairingCatalog = false);
+                            }
+                          }
+                        },
+                  icon: _isRepairingCatalog
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.auto_fix_high),
+                  label: Text(
+                    _isRepairingCatalog
+                        ? "Восстанавливаю справочники..."
+                        : "Починить справочники",
+                  ),
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    if (_lastCatalogRepairReport == null) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Сначала запустите "Починить справочники"',
+                          ),
+                        ),
+                      );
+                      return;
+                    }
+                    _showCatalogRepairReport(_lastCatalogRepairReport!);
+                  },
+                  icon: const Icon(Icons.receipt_long_outlined),
+                  label: const Text("Показать отчёт"),
+                ),
+                const SizedBox(height: 12),
                 FilledButton.icon(
                   onPressed: () async {
                     await SessionService().clearSession();
@@ -296,6 +402,69 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  void _showCatalogRepairReport(Map<String, dynamic> report) {
+    final seed = report['seed'] is Map<String, dynamic>
+        ? report['seed'] as Map<String, dynamic>
+        : <String, dynamic>{};
+    final dedupe = report['dedupe'] is Map<String, dynamic>
+        ? report['dedupe'] as Map<String, dynamic>
+        : <String, dynamic>{};
+
+    final seedAddedFaculties = seed['added_faculties'] ?? 0;
+    final seedAddedGroups = seed['added_groups'] ?? 0;
+    final seedRelinkedGroups = seed['relinked_groups'] ?? 0;
+    final seedAddedNorms = seed['added_norms'] ?? 0;
+    final totalFaculties = seed['total_faculties'] ?? dedupe['total_faculties'] ?? _faculties.length;
+    final totalGroups = seed['total_groups'] ?? _groups.length;
+    final totalNorms = seed['total_norms'] ?? 0;
+
+    final dedupeDeleted = dedupe['deleted_duplicate_faculties'] ?? 0;
+    final dedupeRelinkedGroups = dedupe['relinked_groups'] ?? 0;
+    final dedupeRelinkedUsers = dedupe['relinked_users'] ?? 0;
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Отчёт по восстановлению"),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                report['message']?.toString() ??
+                    'Справочники факультетов и групп восстановлены',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 12),
+              Text("Seed:", style: Theme.of(context).textTheme.titleSmall),
+              Text(" - Добавлено факультетов: $seedAddedFaculties"),
+              Text(" - Добавлено групп: $seedAddedGroups"),
+              Text(" - Перепривязано групп: $seedRelinkedGroups"),
+              Text(" - Добавлено нормативов: $seedAddedNorms"),
+              const SizedBox(height: 8),
+              Text("Deduplicate:", style: Theme.of(context).textTheme.titleSmall),
+              Text(" - Удалено дублей факультетов: $dedupeDeleted"),
+              Text(" - Перепривязано групп: $dedupeRelinkedGroups"),
+              Text(" - Перепривязано пользователей: $dedupeRelinkedUsers"),
+              const SizedBox(height: 8),
+              Text("Итоги:", style: Theme.of(context).textTheme.titleSmall),
+              Text(" - Всего факультетов: $totalFaculties"),
+              Text(" - Всего групп: $totalGroups"),
+              Text(" - Всего нормативов: $totalNorms"),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Закрыть"),
+          ),
+        ],
+      ),
     );
   }
 
@@ -421,10 +590,10 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         padding: const EdgeInsets.all(12),
         child: Row(
           children: [
-            CircleAvatar(
-              backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-              foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
-              child: Text(t.login.isNotEmpty ? t.login[0].toUpperCase() : "?"),
+            UserAvatar(
+              displayName: t.fullName,
+              seed: t.id.isNotEmpty ? t.id : t.login,
+              role: UserRole.teacher,
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -443,19 +612,29 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                 ],
               ),
             ),
-            IconButton(
-              tooltip: "Удалить",
-              icon: const Icon(Icons.delete_outline, color: Colors.red),
-              onPressed: () async {
-                final confirmed = await _confirmDelete(
-                  title: 'Удалить преподавателя?',
-                  content: 'Вы точно хотите удалить преподавателя "${t.fullName}"?',
-                );
-                if (confirmed) {
-                  await _api.deleteUser(t.id);
-                  _loadData();
-                }
-              },
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  tooltip: "Редактировать",
+                  icon: const Icon(Icons.edit_outlined),
+                  onPressed: () => _showEditTeacherDialog(t),
+                ),
+                IconButton(
+                  tooltip: "Удалить",
+                  icon: const Icon(Icons.delete_outline, color: Colors.red),
+                  onPressed: () async {
+                    final confirmed = await _confirmDelete(
+                      title: 'Удалить преподавателя?',
+                      content: 'Вы точно хотите удалить преподавателя "${t.fullName}"?',
+                    );
+                    if (confirmed) {
+                      await _api.deleteUser(t.id);
+                      _loadData();
+                    }
+                  },
+                ),
+              ],
             ),
           ],
         ),
@@ -482,7 +661,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     final search = _studentSearchQuery.trim().toLowerCase();
     final groupsForSelectedFaculty = _studentFilterFacultyId == null
         ? _groups
-        : _groups.where((g) => g.facultyId == _studentFilterFacultyId).toList();
+        : _groupsForFacultyId(_studentFilterFacultyId);
 
     final filteredStudents = _students.where((s) {
       if (_studentFilterFacultyId != null) {
@@ -630,15 +809,15 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   Widget _buildStudentCard(User s) {
     return Card(
       child: InkWell(
-        onTap: () {}, // No edit for now
+        onTap: () => _showEditStudentDialog(s),
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Row(
             children: [
-              CircleAvatar(
-                backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
-                foregroundColor: Theme.of(context).colorScheme.onSecondaryContainer,
-                child: Text(s.fullName.isNotEmpty ? s.fullName[0] : "?"),
+              UserAvatar(
+                displayName: s.fullName,
+                seed: s.id.isNotEmpty ? s.id : s.login,
+                role: UserRole.student,
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -650,22 +829,241 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                   ],
                 ),
               ),
-              IconButton(
-                icon: const Icon(Icons.delete_outline, color: Colors.red),
-                onPressed: () async {
-                   final confirmed = await _confirmDelete(
-                    title: 'Удалить студента?',
-                    content: 'Вы точно хотите удалить студента "${s.fullName}"?',
-                  );
-                  if (confirmed) {
-                    await _api.deleteUser(s.id);
-                    _loadData();
-                  }
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    tooltip: "Редактировать",
+                    icon: const Icon(Icons.edit_outlined),
+                    onPressed: () => _showEditStudentDialog(s),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline, color: Colors.red),
+                    onPressed: () async {
+                       final confirmed = await _confirmDelete(
+                        title: 'Удалить студента?',
+                        content: 'Вы точно хотите удалить студента "${s.fullName}"?',
+                      );
+                      if (confirmed) {
+                        await _api.deleteUser(s.id);
+                        _loadData();
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showEditTeacherDialog(User teacher) {
+    final nameCtrl = TextEditingController(text: teacher.fullName);
+    final passCtrl = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Редактировать преподавателя"),
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                initialValue: teacher.login,
+                enabled: false,
+                decoration: const InputDecoration(labelText: "Логин"),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: nameCtrl,
+                decoration: const InputDecoration(labelText: "ФИО"),
+                validator: _validateFullName,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: passCtrl,
+                decoration: const InputDecoration(
+                  labelText: "Новый пароль (необязательно)",
+                ),
+                validator: (v) {
+                  final value = (v ?? '').trim();
+                  if (value.isEmpty) return null;
+                  if (value.length < 4) return 'Пароль должен быть не короче 4 символов';
+                  return null;
                 },
               ),
             ],
           ),
         ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Отмена")),
+          ElevatedButton(
+            onPressed: () async {
+              if (!formKey.currentState!.validate()) return;
+              final updated = await _api.updateUser(
+                id: teacher.id,
+                fullName: nameCtrl.text.trim(),
+                password: passCtrl.text.trim().isEmpty ? null : passCtrl.text.trim(),
+              );
+              if (!mounted) return;
+              if (updated == null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("Не удалось обновить преподавателя")),
+                );
+                return;
+              }
+              Navigator.pop(ctx);
+              _loadData();
+            },
+            child: const Text("Сохранить"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showEditStudentDialog(User student) {
+    final nameCtrl = TextEditingController(text: student.fullName);
+    final passCtrl = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    String? selectedFacultyId = student.facultyId;
+    if (selectedFacultyId == null && student.faculty != null) {
+      selectedFacultyId = _faculties
+          .firstWhere((f) => f.name == student.faculty, orElse: () => Faculty(id: '', name: ''))
+          .id;
+      if (selectedFacultyId.isEmpty) selectedFacultyId = null;
+    }
+
+    String? selectedGroupId = student.groupId;
+    if (selectedGroupId == null && student.group != null) {
+      selectedGroupId = _groups
+          .firstWhere((g) => g.name == student.group, orElse: () => Group(id: '', name: '', facultyId: ''))
+          .id;
+      if (selectedGroupId.isEmpty) selectedGroupId = null;
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setStateDialog) {
+          final groupsForFaculty = _groupsForFacultyId(selectedFacultyId);
+
+          if (selectedGroupId != null && !groupsForFaculty.any((g) => g.id == selectedGroupId)) {
+            selectedGroupId = null;
+          }
+
+          return AlertDialog(
+            title: const Text("Редактировать студента"),
+            content: SingleChildScrollView(
+              child: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextFormField(
+                      initialValue: student.login,
+                      enabled: false,
+                      decoration: const InputDecoration(labelText: "Логин"),
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: nameCtrl,
+                      decoration: const InputDecoration(labelText: "ФИО"),
+                      validator: _validateFullName,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: passCtrl,
+                      decoration: const InputDecoration(
+                        labelText: "Новый пароль (необязательно)",
+                      ),
+                      validator: (v) {
+                        final value = (v ?? '').trim();
+                        if (value.isEmpty) return null;
+                        if (value.length < 4) return 'Пароль должен быть не короче 4 символов';
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      value: selectedFacultyId,
+                      isExpanded: true,
+                      decoration: const InputDecoration(labelText: "Факультет"),
+                      items: _faculties
+                          .map(
+                            (f) => DropdownMenuItem<String>(
+                              value: f.id,
+                              child: Text(
+                                f.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (v) => setStateDialog(() {
+                        selectedFacultyId = v;
+                        selectedGroupId = null;
+                      }),
+                      validator: (v) => v == null ? 'Выберите факультет' : null,
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      value: selectedGroupId,
+                      isExpanded: true,
+                      decoration: const InputDecoration(labelText: "Группа"),
+                      items: groupsForFaculty
+                          .map(
+                            (g) => DropdownMenuItem<String>(
+                              value: g.id,
+                              child: Text(
+                                g.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (v) => setStateDialog(() => selectedGroupId = v),
+                      validator: (v) => v == null ? 'Выберите группу' : null,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Отмена")),
+              ElevatedButton(
+                onPressed: () async {
+                  if (!formKey.currentState!.validate()) return;
+                  final updated = await _api.updateUser(
+                    id: student.id,
+                    fullName: nameCtrl.text.trim(),
+                    password: passCtrl.text.trim().isEmpty ? null : passCtrl.text.trim(),
+                    facultyId: selectedFacultyId,
+                    groupId: selectedGroupId,
+                  );
+                  if (!mounted) return;
+                  if (updated == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text("Не удалось обновить студента")),
+                    );
+                    return;
+                  }
+                  Navigator.pop(ctx);
+                  _loadData();
+                },
+                child: const Text("Сохранить"),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -895,14 +1293,21 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           ElevatedButton(
             onPressed: () async {
               if (formKey.currentState!.validate()) {
-                await _api.createUser(
-                  login: loginCtrl.text.trim(),
-                  password: passCtrl.text.trim(),
-                  role: UserRole.teacher,
-                  fullName: nameCtrl.text.trim(),
-                );
-                _loadData();
-                if (mounted) Navigator.pop(ctx);
+                try {
+                  await _api.createUser(
+                    login: loginCtrl.text.trim(),
+                    password: passCtrl.text.trim(),
+                    role: UserRole.teacher,
+                    fullName: nameCtrl.text.trim(),
+                  );
+                  _loadData();
+                  if (mounted) Navigator.pop(ctx);
+                } catch (e) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+                  );
+                }
               }
             },
             child: const Text("Создать"),
@@ -924,10 +1329,12 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setStateDialog) {
-           final filteredGroups = selectedFacultyId != null 
-              ? _groups.where((g) => g.facultyId == selectedFacultyId).toList()
-              : <Group>[];
-           
+           final groupsForFaculty = _groupsForFacultyId(selectedFacultyId);
+
+           if (selectedGroupId != null && !groupsForFaculty.any((g) => g.id == selectedGroupId)) {
+             selectedGroupId = null;
+           }
+
            return AlertDialog(
             title: const Text("Добавить студента"),
             content: SingleChildScrollView(
@@ -941,9 +1348,21 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                     TextFormField(controller: nameCtrl, decoration: const InputDecoration(labelText: "ФИО"), validator: _validateFullName),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
+                      isExpanded: true,
                       value: selectedFacultyId,
                       decoration: const InputDecoration(labelText: "Факультет"),
-                      items: _faculties.map((f) => DropdownMenuItem(value: f.id, child: Text(f.name))).toList(),
+                      items: _faculties
+                          .map(
+                            (f) => DropdownMenuItem<String>(
+                              value: f.id,
+                              child: Text(
+                                f.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          )
+                          .toList(),
                       onChanged: (v) => setStateDialog(() {
                         selectedFacultyId = v;
                         selectedGroupId = null;
@@ -951,10 +1370,22 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                       validator: (v) => v == null ? 'Выберите факультет' : null,
                     ),
                     const SizedBox(height: 12),
-                     DropdownButtonFormField<String>(
+                    DropdownButtonFormField<String>(
+                      isExpanded: true,
                       value: selectedGroupId,
                       decoration: const InputDecoration(labelText: "Группа"),
-                      items: filteredGroups.map<DropdownMenuItem<String>>((g) => DropdownMenuItem(value: g.id, child: Text(g.name))).toList(),
+                      items: groupsForFaculty
+                          .map<DropdownMenuItem<String>>(
+                            (g) => DropdownMenuItem<String>(
+                              value: g.id,
+                              child: Text(
+                                g.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          )
+                          .toList(),
                       onChanged: (v) => setStateDialog(() => selectedGroupId = v),
                       validator: (v) => v == null ? 'Выберите группу' : null,
                     ),
@@ -967,16 +1398,23 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
               ElevatedButton(
                 onPressed: () async {
                   if (formKey.currentState!.validate()) {
-                    await _api.createUser(
-                      login: loginCtrl.text.trim(),
-                      password: passCtrl.text.trim(),
-                      role: UserRole.student,
-                      fullName: nameCtrl.text.trim(),
-                      facultyId: selectedFacultyId,
-                      groupId: selectedGroupId,
-                    );
-                    _loadData();
-                    if (mounted) Navigator.pop(ctx);
+                    try {
+                      await _api.createUser(
+                        login: loginCtrl.text.trim(),
+                        password: passCtrl.text.trim(),
+                        role: UserRole.student,
+                        fullName: nameCtrl.text.trim(),
+                        facultyId: selectedFacultyId,
+                        groupId: selectedGroupId,
+                      );
+                      _loadData();
+                      if (mounted) Navigator.pop(ctx);
+                    } catch (e) {
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+                      );
+                    }
                   }
                 },
                 child: const Text("Создать"),

@@ -163,6 +163,12 @@ class SharedPrefsStepTrackerStorage implements StepTrackerStorage {
     } else {
       await prefs.remove('step_stride_m_$uid');
     }
+    final profileHeightKey = StepTrackerService.profileHeightKey(uid);
+    if (stats.profileHeightCm != null) {
+      await prefs.setInt(profileHeightKey, stats.profileHeightCm!);
+    } else {
+      await prefs.remove(profileHeightKey);
+    }
     await prefs.setInt('step_total_$uid', stats.totalSteps);
     await prefs.setString('step_date_$uid', stats.currentDateKey);
     await prefs.setInt('step_today_$uid', stats.stepsToday);
@@ -194,6 +200,7 @@ class ApiStepTrackerStorage implements StepTrackerStorage {
     int defaultGoal = 8000,
   }) async {
     final prefs = await SharedPreferences.getInstance();
+    final localHeight = prefs.getInt(StepTrackerService.profileHeightKey(userId));
     
     // Load local parts (baseline, sensor diffs)
     final storedDate = prefs.getString('step_date_$userId') ?? currentDateKey;
@@ -208,14 +215,32 @@ class ApiStepTrackerStorage implements StepTrackerStorage {
     try {
       final serverStats = await api.getSteps(currentDateKey);
       if (serverStats == null) {
-        return StepTrackerStats.initial(currentDateKey: currentDateKey);
+        final autoStride = StepTrackerService.estimateStrideMetersFromHeightCm(localHeight);
+        return StepTrackerStats(
+          dailyGoal: defaultGoal,
+          strideMeters: autoStride,
+          isCustomStride: false,
+          profileHeightCm: localHeight,
+          stepsToday: 0,
+          totalSteps: 0,
+          currentDateKey: currentDateKey,
+          baselineForToday: storedBaseline,
+          lastSensorSteps: storedLastSensor,
+          history: const {},
+        );
       }
-      
+
+      final resolvedHeight = serverStats.heightCm ?? localHeight;
+      final resolvedIsCustomStride = serverStats.isCustomStride;
+      final resolvedStride = resolvedIsCustomStride
+          ? StepTrackerService.sanitizeStrideMeters(serverStats.strideMeters)
+          : StepTrackerService.estimateStrideMetersFromHeightCm(resolvedHeight);
+
       return StepTrackerStats(
         dailyGoal: serverStats.goal,
-        strideMeters: serverStats.strideMeters,
-        isCustomStride: serverStats.isCustomStride,
-        profileHeightCm: serverStats.heightCm,
+        strideMeters: resolvedStride,
+        isCustomStride: resolvedIsCustomStride,
+        profileHeightCm: resolvedHeight,
         stepsToday: serverStats.steps,
         totalSteps: 0, // Not synced from server yet, or could be
         currentDateKey: currentDateKey,
@@ -225,8 +250,19 @@ class ApiStepTrackerStorage implements StepTrackerStorage {
       );
     } catch (e) {
       print('StepTracker: Failed to load from API, using defaults. $e');
-      // Fallback
-      return StepTrackerStats.initial(currentDateKey: currentDateKey);
+      final autoStride = StepTrackerService.estimateStrideMetersFromHeightCm(localHeight);
+      return StepTrackerStats(
+        dailyGoal: defaultGoal,
+        strideMeters: autoStride,
+        isCustomStride: false,
+        profileHeightCm: localHeight,
+        stepsToday: 0,
+        totalSteps: 0,
+        currentDateKey: currentDateKey,
+        baselineForToday: storedBaseline,
+        lastSensorSteps: storedLastSensor,
+        history: const {},
+      );
     }
   }
 
@@ -244,6 +280,12 @@ class ApiStepTrackerStorage implements StepTrackerStorage {
     }
     if (stats.lastSensorSteps != null) {
       await prefs.setInt('step_last_sensor_$userId', stats.lastSensorSteps!);
+    }
+    final profileHeightKey = StepTrackerService.profileHeightKey(userId);
+    if (stats.profileHeightCm != null) {
+      await prefs.setInt(profileHeightKey, stats.profileHeightCm!);
+    } else {
+      await prefs.remove(profileHeightKey);
     }
 
     // Sync business data to API
