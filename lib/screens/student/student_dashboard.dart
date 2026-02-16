@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../../data/mock_database.dart';
 import '../home_screen.dart'; // Reuse health calculator
 import '../../services/training_advisor.dart';
 import '../../services/session_service.dart';
+import '../../services/step_tracker_service.dart';
+import '../../services/api_service.dart';
 import '../../widgets/responsive_wrapper.dart';
 import '../auth/login_screen.dart'; // Import for logout
 import 'step_tracker_screen.dart';
+import '../../models/user.dart';
+import '../../models/grade.dart';
+import '../../models/norm.dart';
+import '../../models/user_role.dart';
 
 class StudentDashboard extends StatefulWidget {
   final User user;
@@ -18,23 +23,62 @@ class StudentDashboard extends StatefulWidget {
 
 class _StudentDashboardState extends State<StudentDashboard> {
   int _currentIndex = 0;
-  final _db = DatabaseService();
+  final _api = ApiService();
+  final _stepService = const StepTrackerService();
+  late final StepTrackerStorage _stepStorage; // Use late initialization
+  
+  // Data State
+  List<Grade> _grades = [];
+  List<Norm> _norms = [];
+  bool _isLoading = true;
+
   String? _selectedMood;
   String? _moodAdvice;
+  int? _heightCm;
+  StepTrackerStats? _stepSummary;
+  bool _stepSummaryLoading = true;
 
   @override
   void initState() {
     super.initState();
+    _stepStorage = ApiStepTrackerStorage(api: _api);
+    _loadData();
     _loadMoodStateForToday();
+    _loadProfileMetrics();
+    _loadStepSummary();
+  }
+
+  Future<void> _loadData() async {
+    setState(() => _isLoading = true);
+    try {
+      final grades = await _api.getGrades(studentId: widget.user.id);
+      final norms = await _api.getNorms();
+
+      setState(() {
+        _grades = grades;
+        _norms = norms;
+        _isLoading = false;
+      });
+    } catch (e) {
+      print('Error loading data: $e');
+      setState(() => _isLoading = false);
+    }
+  }
+
+  // Helper to get norm name by ID
+  String _getNormName(String normId) {
+    return _norms.firstWhere((n) => n.id == normId, orElse: () => Norm(id: '', name: 'Неизвестный норматив')).name;
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _buildBody(),
+      body: _isLoading 
+          ? const Center(child: CircularProgressIndicator()) 
+          : _buildBody(),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
-        onDestinationSelected: (index) => setState(() => _currentIndex = index),
+        onDestinationSelected: _onDestinationSelected,
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.dashboard_outlined),
@@ -66,6 +110,16 @@ class _StudentDashboardState extends State<StudentDashboard> {
     );
   }
 
+  void _onDestinationSelected(int index) {
+    setState(() => _currentIndex = index);
+    if (index == 0) {
+      _loadStepSummary();
+      _loadData(); // Refresh grades on dashboard
+    } else if (index == 1) {
+      _loadData(); // Refresh grades on journal
+    }
+  }
+
   Widget _buildBody() {
     switch (_currentIndex) {
       case 0: return _buildDashboardTab();
@@ -77,19 +131,73 @@ class _StudentDashboardState extends State<StudentDashboard> {
     }
   }
 
+  Widget _buildSliverAppBar(
+    String title, {
+    IconData icon = Icons.dashboard_outlined,
+    String? subtitle,
+  }) {
+    final theme = Theme.of(context);
+    final width = MediaQuery.sizeOf(context).width;
+    final subtitleFontSize = width < 360 ? 14.0 : (width < 600 ? 16.0 : 18.0);
+    return SliverAppBar.medium(
+      title: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primaryContainer,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, size: 18, color: theme.colorScheme.onPrimaryContainer),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+      bottom: subtitle == null
+          ? null
+          : PreferredSize(
+              preferredSize: const Size.fromHeight(60),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
+                  child: Text(
+                    subtitle,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      fontSize: subtitleFontSize,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+    );
+  }
+
   // --- TAB 1: Dashboard (Summary) ---
   Widget _buildDashboardTab() {
-    final grades = _db.getGradesForStudent(widget.user.id);
+    final recentGrades = [..._grades]..sort((a, b) => b.date.compareTo(a.date));
+    final topRecentGrades = recentGrades.take(3).toList();
     double avgScore = 0;
-    if (grades.isNotEmpty) {
-      avgScore = grades.map((g) => g.score).reduce((a, b) => a + b) / grades.length;
+    if (_grades.isNotEmpty) {
+      avgScore = _grades.map((g) => g.score).reduce((a, b) => a + b) / _grades.length;
     }
 
     return CustomScrollView(
       slivers: [
-        SliverAppBar.medium(
-          title: Text("Привет, ${widget.user.fullName.split(' ')[0]}!"), // First name only
-          centerTitle: false,
+        _buildSliverAppBar(
+          "Привет, ${widget.user.fullName.split(' ')[0]}!",
+          icon: Icons.dashboard_outlined,
+          subtitle: "Главная сводка по нормативам и активности",
         ),
         SliverToBoxAdapter(
           child: ResponsiveWrapper(
@@ -104,7 +212,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                       Expanded(
                         child: _buildStatCard(
                           context,
-                          title: "Средний балл",
+                          title: "Средний балл (нормативы)",
                           value: avgScore > 0 ? avgScore.toStringAsFixed(1) : "-",
                           icon: Icons.school,
                           color: Theme.of(context).colorScheme.primary,
@@ -115,7 +223,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                         child: _buildStatCard(
                           context,
                           title: "Сдано нормативов",
-                          value: grades.length.toString(),
+                          value: _grades.length.toString(),
                           icon: Icons.task_alt,
                           color: Colors.green,
                         ),
@@ -123,11 +231,65 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     ],
                   ),
                   const SizedBox(height: 16),
-
-                  // Health Check-in
                   _buildSummaryCard(
                     context,
-                    title: "Самочувствие",
+                    title: "Прогресс по нормативам",
+                    icon: Icons.military_tech_outlined,
+                    color: Theme.of(context).colorScheme.primary,
+                    content: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _grades.isEmpty
+                              ? "Пока нет оценок. После первой оценки здесь будет видна динамика прогресса."
+                              : "Основной фокус: результаты сдачи нормативов и рост баллов.",
+                        ),
+                        const SizedBox(height: 10),
+                        if (topRecentGrades.isNotEmpty)
+                          ...topRecentGrades.map(
+                            (g) => Padding(
+                              padding: const EdgeInsets.only(bottom: 6),
+                              child: Row(
+                                children: [
+                                  Text(
+                                    "${g.score}",
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: _getScoreColor(g.score),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      _getNormName(g.normId),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        const SizedBox(height: 6),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton.icon(
+                            onPressed: () => _onDestinationSelected(1),
+                            icon: const Icon(Icons.arrow_forward),
+                            label: const Text("Открыть журнал"),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _buildStepsSummaryCard(context),
+                  const SizedBox(height: 16),
+
+                  // Additional wellbeing module
+                  _buildSummaryCard(
+                    context,
+                    title: "Дополнительно: самочувствие",
                     icon: Icons.favorite,
                     color: Theme.of(context).colorScheme.secondary,
                     content: Column(
@@ -191,24 +353,35 @@ class _StudentDashboardState extends State<StudentDashboard> {
 
   // --- TAB 2: Journal (Grades) ---
   Widget _buildJournalTab() {
-    final grades = _db.getGradesForStudent(widget.user.id);
-
-    return Scaffold(
-      appBar: AppBar(title: const Text("Журнал успеваемости")),
-      body: grades.isEmpty 
-          ? _buildEmptyState("Пока нет оценок", Icons.assignment_outlined)
-          : ResponsiveWrapper(
+    return CustomScrollView(
+      slivers: [
+        _buildSliverAppBar(
+          "Журнал успеваемости",
+          icon: Icons.school_outlined,
+          subtitle: "Ваши оценки и рекомендации по нормативам",
+        ),
+        if (_grades.isEmpty)
+          const SliverFillRemaining(
+            hasScrollBody: false,
+            child: Center(child: Text("Пока нет оценок")),
+          )
+        else
+          SliverToBoxAdapter(
+            child: ResponsiveWrapper(
               child: ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
                 padding: const EdgeInsets.all(16),
-                itemCount: grades.length,
+                itemCount: _grades.length,
                 separatorBuilder: (c, i) => const SizedBox(height: 12),
                 itemBuilder: (context, index) {
-                  final g = grades[index];
-                  final advice = TrainingAdvisor.getAdviceForNorm(g.normName, g.score);
-                  
+                  final g = _grades[index];
+                  final normName = _getNormName(g.normId);
+                  final advice = TrainingAdvisor.getAdviceForNorm(normName, g.score);
+
                   return Card(
                     child: ExpansionTile(
-                      shape: const Border(), // Remove default borders
+                      shape: const Border(),
                       leading: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         decoration: BoxDecoration(
@@ -224,10 +397,10 @@ class _StudentDashboardState extends State<StudentDashboard> {
                           ),
                         ),
                       ),
-                      title: Text(g.normName, style: const TextStyle(fontWeight: FontWeight.w600)),
+                      title: Text(normName, style: const TextStyle(fontWeight: FontWeight.w600)),
                       subtitle: Text(
-                        g.date.toString().split(' ')[0], 
-                        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)
+                        g.date.toString().split(' ')[0],
+                        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                       ),
                       childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                       children: [
@@ -253,93 +426,117 @@ class _StudentDashboardState extends State<StudentDashboard> {
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
-                                  advice, 
-                                  style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant)
+                                  advice,
+                                  style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
                                 ),
                               ),
                             ],
-                          )
-                        ]
+                          ),
+                        ],
                       ],
                     ),
                   );
                 },
               ),
             ),
+          ),
+      ],
     );
   }
 
   Widget _buildStepsTab() {
-    return StepTrackerScreen(user: widget.user);
-  }
-
-  // --- TAB 3: Health (Calculator) ---
-  Widget _buildHealthTab() {
-    return HomeScreen(initialUser: null); // Reusing the calculator screen
-  }
-
-  // --- TAB 4: Profile ---
-  Widget _buildProfileTab() {
-    return Scaffold(
-      appBar: AppBar(title: const Text("Профиль")),
-      body: ResponsiveWrapper(
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            Center(
-              child: Column(
-                children: [
-                  CircleAvatar(
-                    radius: 40,
-                    backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-                    child: Text(
-                      widget.user.fullName[0], 
-                      style: TextStyle(fontSize: 32, color: Theme.of(context).colorScheme.onPrimaryContainer)
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    widget.user.fullName,
-                    style: Theme.of(context).textTheme.titleLarge,
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 8),
-                  Chip(
-                    label: Text(widget.user.role == UserRole.student ? "Студент" : "Пользователь"),
-                    backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 32),
-            _buildProfileItem(Icons.school, "Факультет", widget.user.faculty ?? "Не указан"),
-            _buildProfileItem(Icons.class_, "Группа", widget.user.group ?? "Не указана"),
-            _buildProfileItem(Icons.login, "Логин", widget.user.login),
-            const Divider(height: 32),
-            ListTile(
-              leading: const Icon(Icons.privacy_tip_outlined),
-              title: const Text("Приватность"),
-              subtitle: const Text("Данные о самочувствии видны только вам"),
-            ),
-            ListTile(
-              leading: const Icon(Icons.exit_to_app, color: Colors.red),
-              title: const Text("Выйти", style: TextStyle(color: Colors.red)),
-              onTap: () async {
-                await SessionService().clearSession();
-                if (!mounted) return;
-                Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (context) => const LoginScreen()),
-                  (route) => false,
-                );
-              },
-            ),
-          ],
-        ),
-      ),
+    return StepTrackerScreen(
+      user: widget.user,
+      stepTrackerStorage: _stepStorage, // Pass the API storage
     );
   }
 
-  // --- Helpers ---
+  Widget _buildHealthTab() {
+    return HomeScreen(initialUser: null);
+  }
+
+  Widget _buildProfileTab() {
+    return CustomScrollView(
+      slivers: [
+        _buildSliverAppBar(
+          "Профиль",
+          icon: Icons.person_outline,
+          subtitle: "Личные данные и настройки аккаунта",
+        ),
+        SliverToBoxAdapter(
+          child: ResponsiveWrapper(
+            child: ListView(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(16),
+              children: [
+                Center(
+                  child: Column(
+                    children: [
+                      CircleAvatar(
+                        radius: 40,
+                        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                        child: Text(
+                          widget.user.fullName.isNotEmpty ? widget.user.fullName[0] : "?",
+                          style: TextStyle(fontSize: 32, color: Theme.of(context).colorScheme.onPrimaryContainer),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        widget.user.fullName,
+                        style: Theme.of(context).textTheme.titleLarge,
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 8),
+                      Chip(
+                        label: Text(widget.user.role == UserRole.student ? "Студент" : "Пользователь"),
+                        backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 32),
+                _buildProfileItem(Icons.school, "Факультет", widget.user.faculty ?? "Не указан"),
+                _buildProfileItem(Icons.class_, "Группа", widget.user.group ?? "Не указана"),
+                _buildProfileItem(Icons.login, "Логин", widget.user.login),
+                ListTile(
+                  leading: Icon(Icons.height, color: Theme.of(context).colorScheme.primary),
+                  title: Text("Рост", style: Theme.of(context).textTheme.bodySmall),
+                  subtitle: Text(
+                    _heightCm == null ? "Не указан" : "$_heightCm см",
+                    style: const TextStyle(fontSize: 16),
+                  ),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.edit_outlined),
+                    onPressed: _editHeight,
+                  ),
+                ),
+                const Divider(height: 32),
+                ListTile(
+                  leading: const Icon(Icons.privacy_tip_outlined),
+                  title: const Text("Приватность"),
+                  subtitle: const Text("Данные о самочувствии видны только вам"),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.exit_to_app, color: Colors.red),
+                  title: const Text("Выйти", style: TextStyle(color: Colors.red)),
+                  onTap: () async {
+                    await SessionService().clearSession();
+                    await _api.logout();
+                    if (!mounted) return;
+                    Navigator.of(context).pushAndRemoveUntil(
+                      MaterialPageRoute(builder: (context) => const LoginScreen()),
+                      (route) => false,
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
   Widget _buildSummaryCard(BuildContext context, {
     required String title, 
@@ -364,6 +561,60 @@ class _StudentDashboardState extends State<StudentDashboard> {
             content,
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildStepsSummaryCard(BuildContext context) {
+    final stats = _stepSummary;
+    if (_stepSummaryLoading || stats == null) {
+      return _buildSummaryCard(
+        context,
+        title: "Активность сегодня",
+        icon: Icons.directions_walk,
+        color: Theme.of(context).colorScheme.primary,
+        content: const Padding(
+          padding: EdgeInsets.symmetric(vertical: 8),
+          child: LinearProgressIndicator(),
+        ),
+      );
+    }
+
+    final km = _stepService.kmFromSteps(
+      stats.stepsToday,
+      strideMeters: stats.strideMeters,
+    );
+    final points = _stepService.healthPointsFromSteps(stats.stepsToday);
+    final progress = (stats.stepsToday / stats.dailyGoal).clamp(0.0, 1.0);
+    final progressPercent = (progress * 100).round();
+
+    return _buildSummaryCard(
+      context,
+      title: "Активность сегодня",
+      icon: Icons.directions_walk,
+      color: Theme.of(context).colorScheme.primary,
+      content: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text("Шаги: ${stats.stepsToday}"),
+          const SizedBox(height: 4),
+          Text("Дистанция: ${_stepService.formatKm(km)} км"),
+          const SizedBox(height: 4),
+          Text("Баллы: $points"),
+          const SizedBox(height: 10),
+          LinearProgressIndicator(value: progress),
+          const SizedBox(height: 6),
+          Text("Прогресс цели: $progressPercent% (${stats.stepsToday}/${stats.dailyGoal})"),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: () => _onDestinationSelected(2),
+              icon: const Icon(Icons.arrow_forward),
+              label: const Text("Открыть шагомер"),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -395,19 +646,6 @@ class _StudentDashboardState extends State<StudentDashboard> {
       leading: Icon(icon, color: Theme.of(context).colorScheme.primary),
       title: Text(label, style: Theme.of(context).textTheme.bodySmall),
       subtitle: Text(value, style: const TextStyle(fontSize: 16)),
-    );
-  }
-
-  Widget _buildEmptyState(String message, IconData icon) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 64, color: Colors.grey[300]),
-          const SizedBox(height: 16),
-          Text(message, style: TextStyle(color: Colors.grey[600])),
-        ],
-      ),
     );
   }
 
@@ -484,5 +722,82 @@ class _StudentDashboardState extends State<StudentDashboard> {
       _selectedMood = savedMood;
       _moodAdvice = savedAdvice;
     });
+  }
+
+  Future<void> _loadProfileMetrics() async {
+    final prefs = await SharedPreferences.getInstance();
+    final height = prefs.getInt(StepTrackerService.profileHeightKey(widget.user.id));
+    if (!mounted) return;
+    setState(() => _heightCm = height);
+  }
+
+  Future<void> _loadStepSummary() async {
+    setState(() => _stepSummaryLoading = true);
+    final stats = await _stepStorage.load(
+      userId: widget.user.id,
+      currentDateKey: _stepService.dateKey(DateTime.now()),
+    );
+    if (!mounted) return;
+    setState(() {
+      _stepSummary = stats;
+      _stepSummaryLoading = false;
+    });
+  }
+
+  Future<void> _editHeight() async {
+    final controller = TextEditingController(text: _heightCm?.toString() ?? '');
+    final result = await showDialog<int?>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Рост'),
+          content: TextField(
+            controller: controller,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              hintText: 'Введите рост',
+              suffixText: 'см',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Отмена'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, -1),
+              child: const Text('Очистить'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, int.tryParse(controller.text.trim())),
+              child: const Text('Сохранить'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (result == null) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    final key = StepTrackerService.profileHeightKey(widget.user.id);
+    if (result == -1) {
+      await prefs.remove(key);
+      if (!mounted) return;
+      setState(() => _heightCm = null);
+      return;
+    }
+
+    if (!StepTrackerService.isValidHeightCm(result)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Рост должен быть от 120 до 230 см')),
+      );
+      return;
+    }
+
+    await prefs.setInt(key, result);
+    if (!mounted) return;
+    setState(() => _heightCm = result);
   }
 }

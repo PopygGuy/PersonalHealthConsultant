@@ -1,8 +1,14 @@
 import 'package:flutter/material.dart';
-import '../../data/mock_database.dart';
 import '../../services/session_service.dart';
+import '../../services/api_service.dart';
 import '../../widgets/responsive_wrapper.dart';
 import '../auth/login_screen.dart';
+import '../../models/user.dart';
+import '../../models/faculty.dart';
+import '../../models/group.dart';
+import '../../models/norm.dart';
+import '../../models/grade.dart';
+import '../../models/user_role.dart';
 
 class TeacherHomeScreen extends StatefulWidget {
   final User user;
@@ -14,7 +20,15 @@ class TeacherHomeScreen extends StatefulWidget {
 
 class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   int _currentIndex = 0;
-  final _db = DatabaseService();
+  final _api = ApiService();
+
+  // Data State
+  List<User> _students = [];
+  List<Faculty> _faculties = [];
+  List<Group> _groups = [];
+  List<Norm> _norms = [];
+  List<Grade> _grades = [];
+  bool _isLoading = true;
 
   // Filters State
   String? _filterFacultyId;
@@ -25,10 +39,40 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   String? _historyFilterNormId;
 
   @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    setState(() => _isLoading = true);
+    try {
+      final students = await _api.getUsers(role: 'student');
+      final faculties = await _api.getFaculties();
+      final groups = await _api.getGroups();
+      final norms = await _api.getNorms();
+      final grades = await _api.getGrades(); // Get all grades for now, or filter by teacher if backend supports it
+
+      setState(() {
+        _students = students;
+        _faculties = faculties;
+        _groups = groups;
+        _norms = norms;
+        _grades = grades;
+        _isLoading = false;
+      });
+    } catch (e) {
+      print('Error loading data: $e');
+      setState(() => _isLoading = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // Removed global AppBar
-      body: _buildBody(),
+      body: _isLoading 
+        ? const Center(child: CircularProgressIndicator()) 
+        : _buildBody(),
       floatingActionButton: _buildFab(),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
@@ -80,20 +124,70 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   }
 
   // --- REUSABLE HEADER ---
-  Widget _buildSliverAppBar(String title) {
+  Widget _buildSliverAppBar(
+    String title, {
+    IconData icon = Icons.dashboard_outlined,
+    String? subtitle,
+  }) {
+    final theme = Theme.of(context);
+    final width = MediaQuery.sizeOf(context).width;
+    final subtitleFontSize = width < 360 ? 14.0 : (width < 600 ? 16.0 : 18.0);
     return SliverAppBar.medium(
-      title: Text(title),
+      title: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primaryContainer,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, size: 18, color: theme.colorScheme.onPrimaryContainer),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+      bottom: subtitle == null
+          ? null
+          : PreferredSize(
+              preferredSize: const Size.fromHeight(60),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
+                  child: Text(
+                    subtitle,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      fontSize: subtitleFontSize,
+                    ),
+                  ),
+                ),
+              ),
+            ),
     );
   }
 
   Widget _buildProfileTab() {
-    final myGradesCount = _db.getGrades().where((g) => g.teacherId == widget.user.id).length;
-    final normsCount = _db.getNorms().length;
-    final studentsCount = _db.getStudents().length;
+    final myGradesCount = _grades.where((g) => g.teacherId == widget.user.id).length;
+    final normsCount = _norms.length;
+    final studentsCount = _students.length;
 
     return CustomScrollView(
       slivers: [
-        _buildSliverAppBar("Профиль преподавателя"),
+        _buildSliverAppBar(
+          "Профиль преподавателя",
+          icon: Icons.person_outline,
+          subtitle: "Контроль оценок и работа с нормативами",
+        ),
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.all(16),
@@ -128,6 +222,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                 FilledButton.icon(
                   onPressed: () async {
                     await SessionService().clearSession();
+                    await _api.logout();
                     if (!mounted) return;
                     Navigator.of(context).pushAndRemoveUntil(
                       MaterialPageRoute(builder: (context) => const LoginScreen()),
@@ -145,96 +240,22 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     );
   }
 
-  // --- Helper for Adaptive Dialog ---
-  Future<void> _showResponsiveDialog({required String title, required Widget content, required VoidCallback onConfirm}) {
-    return showDialog(
-      context: context,
-      builder: (ctx) {
-        final w = MediaQuery.of(ctx).size.width;
-        final dialogWidth = w >= 600 ? 560.0 : w * 0.92;
-
-        return Dialog(
-          insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: dialogWidth),
-            child: SingleChildScrollView(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(title, style: Theme.of(context).textTheme.titleLarge),
-                    const SizedBox(height: 16),
-                    content,
-                    const SizedBox(height: 24),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Отмена")),
-                        const SizedBox(width: 8),
-                        ElevatedButton(onPressed: onConfirm, child: const Text("Создать")),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Future<bool> _confirmDeleteNorm(String normName) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Подтверждение удаления'),
-        content: Text('Вы точно хотите удалить норматив "$normName"?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Отмена'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Удалить'),
-          ),
-        ],
-      ),
-    );
-    return confirmed ?? false;
-  }
-
-  String? _validateNormName(String? value) {
-    final clean = (value ?? '').trim().replaceAll(RegExp(r'\s+'), ' ');
-    if (clean.isEmpty) return 'Введите название норматива';
-    if (clean.length < 3) return 'Название норматива должно содержать минимум 3 символа';
-    if (clean.length > 120) return 'Название норматива слишком длинное';
-    if (_db.isDuplicateNormName(clean)) return 'Норматив с таким названием уже существует';
-    return null;
-  }
-
   // --- TAB 1: Students List (With Filters) ---
   Widget _buildStudentsTab() {
-    final allStudents = _db.getStudents();
-    final faculties = _db.getFaculties();
-    final allGroups = _db.getGroups();
+    List<User> filteredStudents = _students;
     
-    List<User> filteredStudents = allStudents;
-    
+    // Filter by Faculty
     if (_filterFacultyId != null) {
-      final f = faculties.firstWhere((e) => e.id == _filterFacultyId, orElse: () => Faculty(id: '', name: ''));
-      if (f.name.isNotEmpty) {
-        filteredStudents = filteredStudents.where((s) => s.faculty == f.name).toList();
-      }
+       // Assuming faculty name in User matches Faculty name
+       final f = _faculties.firstWhere((e) => e.id == _filterFacultyId, orElse: () => Faculty(id: '', name: ''));
+       if (f.name.isNotEmpty) {
+         filteredStudents = filteredStudents.where((s) => s.faculty == f.name).toList();
+       }
     }
 
+    // Filter by Group
     if (_filterGroupId != null) {
-       final groups = _db.getGroups();
-       final g = groups.firstWhere((e) => e.id == _filterGroupId, orElse: () => Group(id: '', name: '', facultyId: ''));
+       final g = _groups.firstWhere((e) => e.id == _filterGroupId, orElse: () => Group(id: '', name: '', facultyId: ''));
        if (g.name.isNotEmpty) {
          filteredStudents = filteredStudents.where((s) => s.group == g.name).toList();
        }
@@ -246,9 +267,13 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
 
     return CustomScrollView(
       slivers: [
-        _buildSliverAppBar("Студенты"),
+        _buildSliverAppBar(
+          "Студенты",
+          icon: Icons.people_outline,
+          subtitle: "Список и фильтрация студентов по факультетам и группам",
+        ),
         
-        // FILTERS (Tonal Container)
+        // FILTERS
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.all(16),
@@ -272,7 +297,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                     ),
                     items: [
                       const DropdownMenuItem<String>(value: null, child: Text("Все факультеты")),
-                      ...faculties.map((f) => DropdownMenuItem<String>(
+                      ..._faculties.map((f) => DropdownMenuItem<String>(
                             value: f.id,
                             child: Text(f.name, overflow: TextOverflow.ellipsis, maxLines: 1),
                           )),
@@ -295,8 +320,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                     items: [
                       const DropdownMenuItem<String>(value: null, child: Text("Все направления")),
                       ...(_filterFacultyId == null
-                              ? allGroups
-                              : _db.getGroupsByFaculty(_filterFacultyId!))
+                              ? _groups
+                              : _groups.where((g) => g.facultyId == _filterFacultyId))
                           .map((g) => DropdownMenuItem<String>(
                                 value: g.id,
                                 child: Text(g.name, overflow: TextOverflow.ellipsis, maxLines: 1),
@@ -321,10 +346,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
             sliver: isMobile
               ? SliverList(
                   delegate: SliverChildBuilderDelegate(
-                    (context, index) {
-                      final s = filteredStudents[index];
-                      return _buildStudentCard(s);
-                    },
+                    (context, index) => _buildStudentCard(filteredStudents[index]),
                     childCount: filteredStudents.length,
                   ),
                 )
@@ -333,19 +355,16 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                        crossAxisCount: crossAxisCount,
                        mainAxisSpacing: 12,
                        crossAxisSpacing: 12,
-                       mainAxisExtent: 220, // Fixed height instead of aspect ratio
+                       mainAxisExtent: 220,
                     ),
                     delegate: SliverChildBuilderDelegate(
-                      (context, index) {
-                         final s = filteredStudents[index];
-                         return _buildStudentCard(s);
-                      },
+                      (context, index) => _buildStudentCard(filteredStudents[index]),
                       childCount: filteredStudents.length,
                     ),
                 ),
           ),
           
-          const SliverPadding(padding: EdgeInsets.only(bottom: 80)), // Space for FAB
+          const SliverPadding(padding: EdgeInsets.only(bottom: 80)),
       ],
     );
   }
@@ -353,19 +372,11 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   Widget _buildStudentCard(User s) {
     return Card(
       elevation: 2,
-      color: Theme.of(context).cardTheme.color,
-      margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: Theme.of(context).dividerColor.withOpacity(0.1)),
-      ),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Row(
           children: [
             CircleAvatar(
-              backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
-              foregroundColor: Theme.of(context).colorScheme.onSecondaryContainer,
               child: Text(s.fullName.isNotEmpty ? s.fullName[0] : "?"),
             ),
             const SizedBox(width: 12),
@@ -403,7 +414,11 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
       length: 2,
       child: NestedScrollView(
         headerSliverBuilder: (context, innerBoxIsScrolled) => [
-           _buildSliverAppBar("Журнал оценок"),
+           _buildSliverAppBar(
+             "Журнал оценок",
+             icon: Icons.grade_outlined,
+             subtitle: "Выставление баллов и просмотр истории",
+           ),
            SliverToBoxAdapter(
              child: TabBar(
                 labelColor: Theme.of(context).colorScheme.primary,
@@ -428,30 +443,25 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   }
 
   Widget _buildNewGradeForm() {
-    final students = _db.getStudents();
-    final norms = _db.getNorms();
-    final faculties = _db.getFaculties();
-    final groups = _db.getGroups();
-
-    if (students.isEmpty) return const Center(child: Text("Нет студентов для оценки"));
-    if (norms.isEmpty) return const Center(child: Text("Сначала создайте нормативы во вкладке 'Нормативы'"));
+    if (_students.isEmpty) return const Center(child: Text("Нет студентов для оценки"));
+    if (_norms.isEmpty) return const Center(child: Text("Сначала создайте нормативы во вкладке 'Нормативы'"));
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: ResponsiveWrapper(
         maxWidth: 500,
-        child: Card( // Wrap form in a tonal card
+        child: Card(
           elevation: 0,
           color: Theme.of(context).colorScheme.surfaceContainerLow,
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: _GradeForm(
-              students: students, 
-              norms: norms, 
-              faculties: faculties,
-              groups: groups,
+              students: _students, 
+              norms: _norms, 
+              faculties: _faculties,
+              groups: _groups,
               teacherId: widget.user.id,
-              onGradeAdded: () => setState(() {}),
+              onGradeAdded: _loadData, // Reload data after adding grade
             ),
           ),
         ),
@@ -460,27 +470,19 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   }
 
   Widget _buildGradesHistory() {
-    final grades = _db.getGrades(); 
-    final myGrades = grades.where((g) => g.teacherId == widget.user.id).toList();
-    final faculties = _db.getFaculties();
-    final groups = _db.getGroups();
-    final students = _db.getStudents();
-    final norms = _db.getNorms();
-    final studentsById = {for (final s in students) s.id: s};
+    final myGrades = _grades.where((g) => g.teacherId == widget.user.id).toList();
+    final studentsById = {for (final s in _students) s.id: s};
+    final normsById = {for (final n in _norms) n.id: n};
 
     final selectedFacultyName = _historyFilterFacultyId == null
         ? null
-        : faculties
-            .firstWhere((f) => f.id == _historyFilterFacultyId, orElse: () => Faculty(id: '', name: ''))
-            .name;
+        : _faculties.firstWhere((f) => f.id == _historyFilterFacultyId, orElse: () => Faculty(id: '', name: '')).name;
 
     final selectedGroupName = _historyFilterGroupId == null
         ? null
-        : groups
-            .firstWhere((g) => g.id == _historyFilterGroupId, orElse: () => Group(id: '', name: '', facultyId: ''))
-            .name;
+        : _groups.firstWhere((g) => g.id == _historyFilterGroupId, orElse: () => Group(id: '', name: '', facultyId: '')).name;
 
-    final studentsForDropdown = students.where((s) {
+    final studentsForDropdown = _students.where((s) {
       if (selectedFacultyName != null && s.faculty != selectedFacultyName) return false;
       if (selectedGroupName != null && s.group != selectedGroupName) return false;
       return true;
@@ -491,12 +493,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
       if (_historyFilterNormId != null && g.normId != _historyFilterNormId) return false;
 
       final student = studentsById[g.studentId];
-      if (selectedFacultyName != null && (student == null || student.faculty != selectedFacultyName)) {
-        return false;
-      }
-      if (selectedGroupName != null && (student == null || student.group != selectedGroupName)) {
-        return false;
-      }
+      if (selectedFacultyName != null && (student == null || student.faculty != selectedFacultyName)) return false;
+      if (selectedGroupName != null && (student == null || student.group != selectedGroupName)) return false;
       return true;
     }).toList();
 
@@ -518,64 +516,40 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                    DropdownButtonFormField<String>(
                      isExpanded: true,
                      value: _historyFilterFacultyId,
-                     decoration: const InputDecoration(
-                       labelText: "Факультет",
-                       prefixIcon: Icon(Icons.domain_outlined),
-                     ),
+                     decoration: const InputDecoration(labelText: "Факультет", prefixIcon: Icon(Icons.domain_outlined)),
                      items: [
                        const DropdownMenuItem<String>(value: null, child: Text("Все факультеты")),
-                       ...faculties.map((f) => DropdownMenuItem<String>(
-                             value: f.id,
-                             child: Text(f.name, overflow: TextOverflow.ellipsis, maxLines: 1),
-                           )),
+                       ..._faculties.map((f) => DropdownMenuItem<String>(value: f.id, child: Text(f.name, overflow: TextOverflow.ellipsis))),
                      ],
-                     onChanged: (value) {
-                       setState(() {
+                     onChanged: (value) => setState(() {
                          _historyFilterFacultyId = value;
                          _historyFilterGroupId = null;
                          _historyFilterStudentId = null;
-                       });
-                     },
+                     }),
                    ),
                    const SizedBox(height: 12),
                    DropdownButtonFormField<String>(
                      isExpanded: true,
                      value: _historyFilterGroupId,
-                     decoration: const InputDecoration(
-                       labelText: "Направление / группа",
-                       prefixIcon: Icon(Icons.groups_outlined),
-                     ),
+                     decoration: const InputDecoration(labelText: "Направление / группа", prefixIcon: Icon(Icons.groups_outlined)),
                      items: [
                        const DropdownMenuItem<String>(value: null, child: Text("Все направления")),
-                       ...(_historyFilterFacultyId == null
-                               ? groups
-                               : _db.getGroupsByFaculty(_historyFilterFacultyId!))
-                           .map((g) => DropdownMenuItem<String>(
-                                 value: g.id,
-                                 child: Text(g.name, overflow: TextOverflow.ellipsis, maxLines: 1),
-                               )),
+                       ...(_historyFilterFacultyId == null ? _groups : _groups.where((g) => g.facultyId == _historyFilterFacultyId))
+                           .map((g) => DropdownMenuItem<String>(value: g.id, child: Text(g.name, overflow: TextOverflow.ellipsis))),
                      ],
-                     onChanged: (value) {
-                       setState(() {
+                     onChanged: (value) => setState(() {
                          _historyFilterGroupId = value;
                          _historyFilterStudentId = null;
-                       });
-                     },
+                     }),
                    ),
                    const SizedBox(height: 12),
                    DropdownButtonFormField<String>(
                      isExpanded: true,
                      value: _historyFilterStudentId,
-                     decoration: const InputDecoration(
-                       labelText: "Студент",
-                       prefixIcon: Icon(Icons.person_outline),
-                     ),
+                     decoration: const InputDecoration(labelText: "Студент", prefixIcon: Icon(Icons.person_outline)),
                      items: [
                        const DropdownMenuItem<String>(value: null, child: Text("Все студенты")),
-                       ...studentsForDropdown.map((s) => DropdownMenuItem<String>(
-                             value: s.id,
-                             child: Text(s.fullName, overflow: TextOverflow.ellipsis, maxLines: 1),
-                           )),
+                       ...studentsForDropdown.map((s) => DropdownMenuItem<String>(value: s.id, child: Text(s.fullName, overflow: TextOverflow.ellipsis))),
                      ],
                      onChanged: (value) => setState(() => _historyFilterStudentId = value),
                    ),
@@ -583,16 +557,10 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                    DropdownButtonFormField<String>(
                      isExpanded: true,
                      value: _historyFilterNormId,
-                     decoration: const InputDecoration(
-                       labelText: "Норматив",
-                       prefixIcon: Icon(Icons.rule_outlined),
-                     ),
+                     decoration: const InputDecoration(labelText: "Норматив", prefixIcon: Icon(Icons.rule_outlined)),
                      items: [
                        const DropdownMenuItem<String>(value: null, child: Text("Все нормативы")),
-                       ...norms.map((n) => DropdownMenuItem<String>(
-                             value: n.id,
-                             child: Text(n.name, overflow: TextOverflow.ellipsis, maxLines: 1),
-                           )),
+                       ..._norms.map((n) => DropdownMenuItem<String>(value: n.id, child: Text(n.name, overflow: TextOverflow.ellipsis))),
                      ],
                      onChanged: (value) => setState(() => _historyFilterNormId = value),
                    ),
@@ -607,12 +575,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                 ? SliverToBoxAdapter(
                     child: SizedBox(
                       height: 240,
-                      child: Center(
-                        child: Text(
-                          "По выбранным фильтрам ничего не найдено",
-                          style: Theme.of(context).textTheme.bodyMedium,
-                        ),
-                      ),
+                      child: Center(child: Text("По выбранным фильтрам ничего не найдено", style: Theme.of(context).textTheme.bodyMedium)),
                     ),
                   )
                 : SliverList(
@@ -621,30 +584,24 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                   final g = filteredGrades[index];
                   final bool isEdited = g.history.isNotEmpty;
                   final theme = Theme.of(context);
+                  
+                  final studentName = studentsById[g.studentId]?.fullName ?? 'Неизвестный студент';
+                  final normName = normsById[g.normId]?.name ?? 'Неизвестный норматив';
 
                   return Card(
                     elevation: 0,
                     margin: const EdgeInsets.only(bottom: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      side: BorderSide(color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
-                    ),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: theme.colorScheme.outlineVariant.withOpacity(0.5))),
                     child: Theme(
                       data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
                       child: ExpansionTile(
                         leading: _getScoreIcon(g.score),
-                        title: Text(g.studentName, style: const TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Text("${g.normName} — ${g.date.toString().split(' ')[0]}"),
+                        title: Text(studentName, style: const TextStyle(fontWeight: FontWeight.bold)),
+                        subtitle: Text("$normName — ${g.date.toString().split(' ')[0]}"),
                         trailing: Container(
                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                           decoration: BoxDecoration(
-                             color: _getScoreColor(g.score).withOpacity(0.1),
-                             borderRadius: BorderRadius.circular(20),
-                           ),
-                           child: Text(
-                             "${g.score}", 
-                             style: TextStyle(fontWeight: FontWeight.bold, color: _getScoreColor(g.score), fontSize: Theme.of(context).textTheme.titleMedium?.fontSize)
-                           ),
+                           decoration: BoxDecoration(color: _getScoreColor(g.score).withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
+                           child: Text("${g.score}", style: TextStyle(fontWeight: FontWeight.bold, color: _getScoreColor(g.score), fontSize: Theme.of(context).textTheme.titleMedium?.fontSize)),
                         ),
                         children: [
                           Padding(
@@ -655,10 +612,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                                 if (g.comment != null && g.comment!.isNotEmpty)
                                    Container(
                                      padding: const EdgeInsets.all(12),
-                                     decoration: BoxDecoration(
-                                       color: theme.colorScheme.surfaceContainerHighest,
-                                       borderRadius: BorderRadius.circular(12),
-                                     ),
+                                     decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(12)),
                                      child: Text(g.comment!),
                                    ),
                                 
@@ -675,10 +629,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                                          children: [
                                            Icon(Icons.history, size: 14, color: theme.colorScheme.outline),
                                            const SizedBox(width: 8),
-                                           Text(
-                                             "Был балл: $hScore ($hDate)",
-                                             style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: theme.textTheme.bodySmall?.fontSize),
-                                           ),
+                                           Text("Был балл: $hScore ($hDate)", style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: theme.textTheme.bodySmall?.fontSize)),
                                          ],
                                        ),
                                      );
@@ -714,11 +665,14 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
 
   // --- TAB 3: Norms Management ---
   Widget _buildNormsTab() {
-    final norms = _db.getNorms();
     return CustomScrollView(
       slivers: [
-        _buildSliverAppBar("Нормативы"),
-        if (norms.isEmpty) 
+        _buildSliverAppBar(
+          "Нормативы",
+          icon: Icons.rule_outlined,
+          subtitle: "Актуальный перечень нормативов для оценки",
+        ),
+        if (_norms.isEmpty) 
            const SliverFillRemaining(child: Center(child: Text("Список нормативов пуст"))),
         
         SliverPadding(
@@ -726,7 +680,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
           sliver: SliverList(
             delegate: SliverChildBuilderDelegate(
               (context, index) {
-                final n = norms[index];
+                final n = _norms[index];
                 return Card(
                   child: ListTile(
                     leading: Container(
@@ -740,48 +694,68 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                       onPressed: () async {
                          final shouldDelete = await _confirmDeleteNorm(n.name);
                          if (!shouldDelete) return;
-                         _db.deleteNorm(n.id);
-                         setState(() {});
+                         await _api.deleteNorm(n.id);
+                         _loadData();
                       },
                     ),
                   ),
                 );
               },
-              childCount: norms.length,
+              childCount: _norms.length,
             ),
           ),
+        ),
+        const SliverToBoxAdapter(
+          child: SizedBox(height: 88),
         ),
       ],
     );
   }
 
+  Future<bool> _confirmDeleteNorm(String normName) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Подтверждение удаления'),
+        content: Text('Вы точно хотите удалить норматив "$normName"?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), style: FilledButton.styleFrom(backgroundColor: Colors.red), child: const Text('Удалить')),
+        ],
+      ),
+    );
+    return confirmed ?? false;
+  }
+
   void _showAddNormDialog(BuildContext context) {
     final controller = TextEditingController();
     final formKey = GlobalKey<FormState>();
-    _showResponsiveDialog(
-      title: "Добавить норматив",
-      content: Form(
-        key: formKey,
-        autovalidateMode: AutovalidateMode.onUserInteraction,
-        child: TextFormField(
-          controller: controller,
-          decoration: const InputDecoration(labelText: "Название (бег, подтягивания...)"),
-          validator: _validateNormName,
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Добавить норматив"),
+        content: Form(
+          key: formKey,
+          child: TextFormField(
+            controller: controller,
+            decoration: const InputDecoration(labelText: "Название"),
+            validator: (v) => v == null || v.isEmpty ? 'Введите название' : null,
+          ),
         ),
+        actions: [
+           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Отмена")),
+           ElevatedButton(
+             onPressed: () async {
+               if (formKey.currentState!.validate()) {
+                 await _api.createNorm(controller.text.trim());
+                 _loadData();
+                 if (mounted) Navigator.pop(ctx);
+               }
+             },
+             child: const Text("Создать"),
+           ),
+        ],
       ),
-      onConfirm: () async {
-        if (!(formKey.currentState?.validate() ?? false)) return;
-        try {
-          await _db.addNorm(controller.text.trim());
-          setState(() {});
-          if (mounted) Navigator.pop(context);
-        } catch (e) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
-          );
-        }
-      },
     );
   }
 }
@@ -847,10 +821,7 @@ class _GradeFormState extends State<_GradeForm> {
           decoration: const InputDecoration(labelText: "Факультет", prefixIcon: Icon(Icons.domain_outlined)),
           items: [
             const DropdownMenuItem<String>(value: null, child: Text("Все факультеты")),
-            ...widget.faculties.map((f) => DropdownMenuItem(
-              value: f.id,
-              child: Text(f.name, overflow: TextOverflow.ellipsis),
-            )),
+            ...widget.faculties.map((f) => DropdownMenuItem(value: f.id, child: Text(f.name, overflow: TextOverflow.ellipsis))),
           ],
           onChanged: (v) => setState(() {
             _selectedFacultyId = v;
@@ -865,10 +836,7 @@ class _GradeFormState extends State<_GradeForm> {
           decoration: const InputDecoration(labelText: "Направление / группа", prefixIcon: Icon(Icons.groups_outlined)),
           items: [
             const DropdownMenuItem<String>(value: null, child: Text("Все направления")),
-            ...groupsForFaculty.map((g) => DropdownMenuItem(
-              value: g.id,
-              child: Text(g.name, overflow: TextOverflow.ellipsis),
-            )),
+            ...groupsForFaculty.map((g) => DropdownMenuItem(value: g.id, child: Text(g.name, overflow: TextOverflow.ellipsis))),
           ],
           onChanged: (v) => setState(() {
             _selectedGroupId = v;
@@ -879,45 +847,14 @@ class _GradeFormState extends State<_GradeForm> {
         DropdownButtonFormField<String>(
           isExpanded: true,
           decoration: const InputDecoration(labelText: "Студент", prefixIcon: Icon(Icons.person)),
-          items: filteredStudents.map((s) => DropdownMenuItem(
-            value: s.id,
-            child: Text(s.fullName, overflow: TextOverflow.ellipsis),
-          )).toList(),
-          selectedItemBuilder: (context) {
-            return filteredStudents.map<Widget>((s) {
-              return Text(s.fullName, overflow: TextOverflow.ellipsis, maxLines: 1);
-            }).toList();
-          },
+          items: filteredStudents.map((s) => DropdownMenuItem(value: s.id, child: Text(s.fullName, overflow: TextOverflow.ellipsis))).toList(),
           onChanged: (v) => setState(() => _selectedStudentId = v),
         ),
-        if (filteredStudents.isEmpty) ...[
-          const SizedBox(height: 8),
-          Text(
-            "По выбранным фильтрам нет студентов",
-            style: TextStyle(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-              fontSize: Theme.of(context).textTheme.bodySmall?.fontSize,
-            ),
-          ),
-        ],
         const SizedBox(height: 16),
         DropdownButtonFormField<String>(
           isExpanded: true,
           decoration: const InputDecoration(labelText: "Норматив", prefixIcon: Icon(Icons.rule)),
-          items: widget.norms.map((n) => DropdownMenuItem(
-            value: n.id,
-            child: Text(
-              n.name, 
-              overflow: TextOverflow.visible, 
-              maxLines: 2,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-          )).toList(),
-          selectedItemBuilder: (context) {
-            return widget.norms.map<Widget>((n) {
-              return Text(n.name, overflow: TextOverflow.ellipsis, maxLines: 1);
-            }).toList();
-          },
+          items: widget.norms.map((n) => DropdownMenuItem(value: n.id, child: Text(n.name, overflow: TextOverflow.ellipsis))).toList(),
           onChanged: (v) => setState(() => _selectedNormId = v),
         ),
         const SizedBox(height: 16),
@@ -953,21 +890,15 @@ class _GradeFormState extends State<_GradeForm> {
     return "баллов";
   }
 
-  void _submit() {
+  void _submit() async {
     if (_selectedStudentId == null || _selectedNormId == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Выберите студента и норматив")));
       return;
     }
     
-    final student = widget.students.firstWhere((s) => s.id == _selectedStudentId);
-    final norm = widget.norms.firstWhere((n) => n.id == _selectedNormId);
-
-    DatabaseService().addGrade(
-      studentId: student.id,
-      studentName: student.fullName,
-      teacherId: widget.teacherId,
-      normId: norm.id,
-      normName: norm.name,
+    await ApiService().createGrade(
+      studentId: _selectedStudentId!,
+      normId: _selectedNormId!,
       score: _score,
       comment: _commentController.text,
     );

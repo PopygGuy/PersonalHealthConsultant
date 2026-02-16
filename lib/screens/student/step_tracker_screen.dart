@@ -1,16 +1,23 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:pedometer/pedometer.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../data/mock_database.dart';
+import '../../services/step_tracker_service.dart';
+import '../../models/user.dart';
 
 class StepTrackerScreen extends StatefulWidget {
   final User user;
-  const StepTrackerScreen({super.key, required this.user});
+  final StepTrackerService? stepTrackerService;
+  final StepTrackerStorage? stepTrackerStorage;
+
+  const StepTrackerScreen({
+    super.key,
+    required this.user,
+    this.stepTrackerService,
+    this.stepTrackerStorage,
+  });
 
   @override
   State<StepTrackerScreen> createState() => _StepTrackerScreenState();
@@ -19,25 +26,22 @@ class StepTrackerScreen extends StatefulWidget {
 class _StepTrackerScreenState extends State<StepTrackerScreen> {
   StreamSubscription<StepCount>? _stepSubscription;
   StreamSubscription<PedestrianStatus>? _statusSubscription;
+  late final StepTrackerService _stepService;
+  late final StepTrackerStorage _stepStorage;
 
   bool _permissionGranted = false;
+  bool _stepSensorUnavailable = false;
   String _pedestrianStatus = 'Неизвестно';
   String? _statusHint;
 
-  int _stepsToday = 0;
-  int _totalSteps = 0;
-  int _dailyGoal = 8000;
-
-  String _currentDateKey = _dateKey(DateTime.now());
-  int? _baselineForToday;
-  int? _lastSensorSteps;
-
-  // Simple per-day history map: yyyy-MM-dd -> steps
-  Map<String, int> _history = {};
+  late StepTrackerStats _stats;
 
   @override
   void initState() {
     super.initState();
+    _stepService = widget.stepTrackerService ?? const StepTrackerService();
+    _stepStorage = widget.stepTrackerStorage ?? const SharedPrefsStepTrackerStorage();
+    _stats = StepTrackerStats.initial(currentDateKey: _stepService.dateKey(DateTime.now()));
     _bootstrap();
   }
 
@@ -67,6 +71,7 @@ class _StepTrackerScreenState extends State<StepTrackerScreen> {
 
     setState(() {
       _permissionGranted = true;
+      _stepSensorUnavailable = false;
       _statusHint = null;
     });
 
@@ -74,9 +79,7 @@ class _StepTrackerScreenState extends State<StepTrackerScreen> {
       _onStepCount,
       onError: (error) {
         if (!mounted) return;
-        setState(() {
-          _statusHint = 'Ошибка шагомера: $error';
-        });
+        _handleStepError(error);
       },
       cancelOnError: false,
     );
@@ -84,108 +87,138 @@ class _StepTrackerScreenState extends State<StepTrackerScreen> {
     _statusSubscription = Pedometer.pedestrianStatusStream.listen(
       (event) {
         if (!mounted) return;
-        setState(() => _pedestrianStatus = _statusRu(event.status));
+        setState(() => _pedestrianStatus = _stepService.statusRu(event.status));
       },
       onError: (_) {
         if (!mounted) return;
-        setState(() => _pedestrianStatus = 'Неизвестно');
+        setState(() {
+          _pedestrianStatus = _stepSensorUnavailable ? 'Недоступно' : 'Неизвестно';
+        });
       },
       cancelOnError: false,
     );
   }
 
+  void _handleStepError(Object error) {
+    final message = error.toString();
+    final isUnavailable = _isStepSensorUnavailable(message);
+    if (isUnavailable) {
+      _stepSubscription?.cancel();
+      _statusSubscription?.cancel();
+      setState(() {
+        _stepSensorUnavailable = true;
+        _pedestrianStatus = 'Недоступно';
+        _statusHint =
+            'На этом устройстве недоступен датчик шагов. В эмуляторе это ожидаемо — проверьте на реальном телефоне.';
+      });
+      return;
+    }
+    setState(() {
+      _statusHint = 'Ошибка шагомера: $error';
+    });
+  }
+
+  bool _isStepSensorUnavailable(String rawError) {
+    final lower = rawError.toLowerCase();
+    return lower.contains('stepcount not available') ||
+        lower.contains('stepcount is not available') ||
+        lower.contains('no sensor') ||
+        lower.contains('not available on this device');
+  }
+
   Future<void> _onStepCount(StepCount event) async {
-    final now = DateTime.now();
-    final todayKey = _dateKey(now);
-    final sensorSteps = event.steps;
-
-    // If day changed, reset daily baseline.
-    if (_currentDateKey != todayKey) {
-      _currentDateKey = todayKey;
-      _baselineForToday = null;
-      _stepsToday = 0;
-    }
-
-    _baselineForToday ??= sensorSteps;
-
-    // Sensor may reset (e.g. reboot), adapt baseline safely.
-    if (sensorSteps < (_baselineForToday ?? 0)) {
-      _baselineForToday = sensorSteps;
-    }
-
-    final todaySteps = (sensorSteps - (_baselineForToday ?? sensorSteps)).clamp(0, 1000000).toInt();
-
-    int total = _totalSteps;
-    if (_lastSensorSteps != null && sensorSteps >= _lastSensorSteps!) {
-      total += (sensorSteps - _lastSensorSteps!).toInt();
-    }
-    _lastSensorSteps = sensorSteps;
-
-    _stepsToday = todaySteps;
-    _totalSteps = total;
-    _history[_currentDateKey] = _stepsToday;
+    _stats = _stepService.applyStepEvent(
+      current: _stats,
+      sensorSteps: event.steps,
+      now: DateTime.now(),
+    );
 
     if (mounted) setState(() {});
     await _saveStoredStats();
   }
 
   Future<void> _loadStoredStats() async {
-    final prefs = await SharedPreferences.getInstance();
-    final uid = widget.user.id;
-
-    _dailyGoal = prefs.getInt('step_goal_$uid') ?? 8000;
-    _totalSteps = prefs.getInt('step_total_$uid') ?? 0;
-    _lastSensorSteps = prefs.getInt('step_last_sensor_$uid');
-
-    final storedDate = prefs.getString('step_date_$uid') ?? _currentDateKey;
-    final baseline = prefs.getInt('step_baseline_$uid');
-    final today = prefs.getInt('step_today_$uid') ?? 0;
-
-    // Keep daily values only for same date.
-    if (storedDate == _currentDateKey) {
-      _baselineForToday = baseline;
-      _stepsToday = today;
-    } else {
-      _baselineForToday = null;
-      _stepsToday = 0;
-    }
-
-    final historyRaw = prefs.getString('step_history_$uid');
-    if (historyRaw != null && historyRaw.isNotEmpty) {
-      final decoded = jsonDecode(historyRaw) as Map<String, dynamic>;
-      _history = decoded.map((k, v) => MapEntry(k, (v as num).toInt()));
-    }
+    _stats = await _stepStorage.load(
+      userId: widget.user.id,
+      currentDateKey: _stepService.dateKey(DateTime.now()),
+    );
+    if (mounted) setState(() {});
   }
 
   Future<void> _saveStoredStats() async {
-    final prefs = await SharedPreferences.getInstance();
-    final uid = widget.user.id;
-
-    await prefs.setInt('step_goal_$uid', _dailyGoal);
-    await prefs.setInt('step_total_$uid', _totalSteps);
-    await prefs.setString('step_date_$uid', _currentDateKey);
-    await prefs.setInt('step_today_$uid', _stepsToday);
-    if (_baselineForToday != null) {
-      await prefs.setInt('step_baseline_$uid', _baselineForToday!);
-    }
-    if (_lastSensorSteps != null) {
-      await prefs.setInt('step_last_sensor_$uid', _lastSensorSteps!);
-    }
-    await prefs.setString('step_history_$uid', jsonEncode(_history));
+    await _stepStorage.save(userId: widget.user.id, stats: _stats);
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final progress = (_stepsToday / _dailyGoal).clamp(0.0, 1.0);
-    final sortedDays = _history.keys.toList()..sort((a, b) => b.compareTo(a));
+    final progress = (_stats.stepsToday / _stats.dailyGoal).clamp(0.0, 1.0);
+    final sortedDays = _stats.history.keys.toList()..sort((a, b) => b.compareTo(a));
     final recentDays = sortedDays.take(7).toList();
+    final todayKm = _stepService.kmFromSteps(_stats.stepsToday, strideMeters: _stats.strideMeters);
+    final totalKm = _stepService.kmFromSteps(_stats.totalSteps, strideMeters: _stats.strideMeters);
+    final goalKm = _stepService.kmFromSteps(_stats.dailyGoal, strideMeters: _stats.strideMeters);
+    final todayPoints = _stepService.healthPointsFromSteps(_stats.stepsToday);
+    final totalPoints = _stepService.healthPointsFromSteps(_stats.totalSteps);
+    final strideCm = (_stats.strideMeters * 100).round();
+    final strideSource = _stats.isCustomStride
+        ? 'ручная настройка'
+        : (_stats.profileHeightCm != null
+            ? 'авто по росту ${_stats.profileHeightCm} см'
+            : 'значение по умолчанию');
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Шагомер')),
+      appBar: AppBar(
+        title: const Text('Шагомер'),
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  theme.colorScheme.primaryContainer,
+                  theme.colorScheme.tertiaryContainer,
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.directions_walk, color: theme.colorScheme.onPrimaryContainer),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Индивидуальный модуль активности',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          color: theme.colorScheme.onPrimaryContainer,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _moduleChip(context, 'Шаги'),
+                    _moduleChip(context, 'Дистанция (км)'),
+                    _moduleChip(context, 'Баллы активности'),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -197,31 +230,55 @@ class _StepTrackerScreenState extends State<StepTrackerScreen> {
                       Icon(Icons.directions_walk, color: theme.colorScheme.primary),
                       const SizedBox(width: 8),
                       Text(
-                        'Сегодня: $_stepsToday шагов',
+                        'Сегодня: ${_stats.stepsToday} шагов',
                         style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
                       ),
                     ],
                   ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Дистанция сегодня: ${_stepService.formatKm(todayKm)} км',
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: _openStrideSettings,
+                    icon: const Icon(Icons.straighten),
+                    label: Text('Длина шага: $strideCm см'),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Источник: $strideSource',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
                   const SizedBox(height: 10),
                   LinearProgressIndicator(value: progress),
                   const SizedBox(height: 8),
-                  Text('Цель: $_dailyGoal шагов'),
+                  Text('Цель: ${_stats.dailyGoal} шагов (${_stepService.formatKm(goalKm)} км)'),
                   const SizedBox(height: 8),
-                  Text('Всего зафиксировано: $_totalSteps'),
+                  Text(
+                    'Всего зафиксировано: ${_stats.totalSteps} шагов (${_stepService.formatKm(totalKm)} км)',
+                  ),
+                  const SizedBox(height: 8),
+                  Text('Баллы активности: сегодня $todayPoints / всего $totalPoints'),
                   const SizedBox(height: 8),
                   Text('Статус: $_pedestrianStatus'),
-                  if (!_permissionGranted || _statusHint != null) ...[
+                  if (_statusHint != null) ...[
                     const SizedBox(height: 10),
                     Text(
-                      _statusHint ?? 'Нет разрешения на отслеживание шагов',
+                      _statusHint!,
                       style: TextStyle(color: theme.colorScheme.error),
                     ),
-                    const SizedBox(height: 8),
-                    OutlinedButton.icon(
-                      onPressed: _requestPermissionAndStart,
-                      icon: const Icon(Icons.security),
-                      label: const Text('Запросить доступ'),
-                    ),
+                    if (!_permissionGranted) ...[
+                      const SizedBox(height: 8),
+                      OutlinedButton.icon(
+                        onPressed: _requestPermissionAndStart,
+                        icon: const Icon(Icons.security),
+                        label: const Text('Запросить доступ'),
+                      ),
+                    ],
                   ],
                 ],
               ),
@@ -240,17 +297,19 @@ class _StepTrackerScreenState extends State<StepTrackerScreen> {
                   ),
                   const SizedBox(height: 10),
                   if (recentDays.isEmpty)
-                    const Text('Пока нет данных по шагам')
+                    const Text('Пока нет данных по шагам и дистанции')
                   else
                     ...recentDays.map((day) {
-                      final value = _history[day] ?? 0;
+                      final steps = _stats.history[day] ?? 0;
+                      final km = _stepService.kmFromSteps(steps, strideMeters: _stats.strideMeters);
                       return ListTile(
                         dense: true,
                         contentPadding: EdgeInsets.zero,
                         leading: const Icon(Icons.calendar_today_outlined, size: 18),
-                        title: Text(_formatDate(day)),
+                        title: Text(_stepService.formatDate(day)),
+                        subtitle: Text('${_stepService.formatKm(km)} км'),
                         trailing: Text(
-                          '$value',
+                          '$steps',
                           style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
                         ),
                       );
@@ -264,24 +323,119 @@ class _StepTrackerScreenState extends State<StepTrackerScreen> {
     );
   }
 
-  static String _statusRu(String status) {
-    switch (status.toLowerCase()) {
-      case 'walking':
-        return 'Ходьба';
-      case 'stopped':
-        return 'Покой';
-      default:
-        return 'Неизвестно';
+  Widget _moduleChip(BuildContext context, String label) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface.withOpacity(0.75),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurface,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openStrideSettings() async {
+    final controller = TextEditingController(text: (_stats.strideMeters * 100).round().toString());
+    final result = await showDialog<_StrideDialogResult>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Длина шага'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Введите длину шага в сантиметрах (40-120):'),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  hintText: 'Например: 78',
+                  suffixText: 'см',
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Используется для расчета дистанции в км.',
+                style: Theme.of(ctx).textTheme.bodySmall,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Отмена'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, _StrideDialogResult.autoMode),
+              child: const Text('Авто по росту'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final parsed = int.tryParse(controller.text.trim());
+                Navigator.pop(ctx, _StrideDialogResult.custom(parsed));
+              },
+              child: const Text('Сохранить'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (result == null) return;
+    if (result.useAuto) {
+      final autoStride = StepTrackerService.estimateStrideMetersFromHeightCm(_stats.profileHeightCm);
+      setState(() {
+        _stats = _stats.copyWith(
+          strideMeters: autoStride,
+          isCustomStride: false,
+        );
+      });
+      await _saveStoredStats();
+      return;
     }
+
+    final customCm = result.customCm;
+    if (customCm == null || customCm < 40 || customCm > 120) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Длина шага должна быть от 40 до 120 см')),
+      );
+      return;
+    }
+
+    final strideMeters = StepTrackerService.sanitizeStrideMeters(customCm / 100.0);
+    setState(() {
+      _stats = _stats.copyWith(
+        strideMeters: strideMeters,
+        isCustomStride: true,
+      );
+    });
+    await _saveStoredStats();
   }
 
-  static String _dateKey(DateTime date) {
-    return '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+}
+
+class _StrideDialogResult {
+  final int? customCm;
+  final bool useAuto;
+
+  const _StrideDialogResult._({
+    required this.customCm,
+    required this.useAuto,
+  });
+
+  factory _StrideDialogResult.custom(int? cm) {
+    return _StrideDialogResult._(customCm: cm, useAuto: false);
   }
 
-  static String _formatDate(String key) {
-    final parts = key.split('-');
-    if (parts.length != 3) return key;
-    return '${parts[2]}.${parts[1]}.${parts[0]}';
-  }
+  static const autoMode = _StrideDialogResult._(customCm: null, useAuto: true);
 }

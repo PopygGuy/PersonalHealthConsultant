@@ -42,7 +42,7 @@ class ResultScreen extends StatelessWidget {
             tabs: const [
               Tab(text: 'Тренировка'),
               Tab(text: 'Отдых'),
-              Tab(text: 'Рефид'),
+              Tab(text: 'Рефид (поддержка)'),
             ],
           ),
         ),

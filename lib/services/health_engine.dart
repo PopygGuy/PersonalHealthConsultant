@@ -124,11 +124,11 @@ class HealthEngine {
           proteinPerKg = highBmi ? 1.8 : 2.2; 
           fatPerKg = 1.0; 
         } else {
-          targetCalories = tdee; 
-          title = "Рефид";
-          desc = "Загрузка углеводами.";
+          targetCalories = tdee * 0.95;
+          title = "Рефид (углеводная поддержка)";
+          desc = "Кратковременное повышение углеводов для поддержки дефицита.";
           proteinPerKg = 1.6;
-          fatPerKg = 0.6; 
+          fatPerKg = 0.6;
         }
         break;
 
@@ -146,11 +146,11 @@ class HealthEngine {
            proteinPerKg = highBmi ? 1.5 : 1.8;
            fatPerKg = 1.1; 
         } else {
-           targetCalories = tdee * 1.05;
-           title = "Выходной";
-           desc = "Свободный режим.";
+           targetCalories = tdee;
+           title = "Рефид (плановая подпитка)";
+           desc = "Повышение углеводов без выхода за разумные калории.";
            proteinPerKg = 1.6;
-           fatPerKg = 1.0;
+           fatPerKg = 0.8;
         }
         break;
 
@@ -168,9 +168,9 @@ class HealthEngine {
           proteinPerKg = 2.0;
           fatPerKg = 1.0;
         } else {
-          targetCalories = tdee * 1.25;
-          title = "Тяжелая тренировка";
-          desc = "Максимум энергии.";
+          targetCalories = tdee * 1.10;
+          title = "Рефид (контроль углеводов)";
+          desc = "Углеводная подпитка при сохранении контроля по жирам.";
           proteinPerKg = 1.7;
           fatPerKg = 0.8;
         }
@@ -228,8 +228,11 @@ class HealthEngine {
       tips.add(_veggieTips[random.nextInt(_veggieTips.length)]);
       tips.add(_fatSources[random.nextInt(_fatSources.length)]);
     } else if (type == DayType.refeed) {
-      tips.add("🥐 Жиры (${dailyFat}г) на минимуме! Не добавляйте масло.");
-      tips.add("🍝 " + _carbSources[random.nextInt(_carbSources.length)]);
+      tips.add("🔄 Рефид — это 1-2 дня диетической поддержки, а не читдэй.");
+      tips.add("🍝 Основной прирост калорий — за счет углеводов, белок держите стабильно.");
+      tips.add("🥐 Жиры (${dailyFat}г) не разгоняйте, чтобы не выбить недельный баланс.");
+      tips.add("📅 Удобно ставить рефид в день тяжелой тренировки или накануне — по самочувствию.");
+      tips.add(_carbSources[random.nextInt(_carbSources.length)]);
     }
     
     return tips;

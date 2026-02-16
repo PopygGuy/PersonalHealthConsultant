@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
-import '../../data/mock_database.dart';
 import '../../services/session_service.dart';
+import '../../services/api_service.dart';
 import '../admin/admin_home_screen.dart';
 import '../teacher/teacher_home_screen.dart';
 import '../student/student_dashboard.dart';
+import '../../models/user_role.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -22,9 +23,9 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
-    await Future.delayed(const Duration(seconds: 1)); // Imitation
-
-    final user = DatabaseService().login(
+    
+    // Use ApiService for login instead of DatabaseService
+    final user = await ApiService().login(
       _loginController.text, 
       _passwordController.text,
     );
@@ -34,7 +35,8 @@ class _LoginScreenState extends State<LoginScreen> {
     if (user != null) {
       await SessionService().saveSession(user);
       if (!mounted) return;
-      Widget nextScreen;
+      Widget nextScreen = const Scaffold(body: Center(child: Text('Ошибка роли'))); // Default
+      
       switch (user.role) {
         case UserRole.admin:
           nextScreen = const AdminHomeScreen();
@@ -55,7 +57,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Неверный логин или пароль'),
+          content: Text('Неверный логин или пароль, либо ошибка соединения'),
           backgroundColor: Colors.red,
         ),
       );
@@ -88,7 +90,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           shape: BoxShape.circle,
                         ),
                         child: Icon(
-                          Icons.health_and_safety,
+                          Icons.fact_check_outlined,
                           size: 64,
                           color: Theme.of(context).primaryColor,
                         ),
@@ -102,7 +104,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Ваш персональный консультант по здоровью',
+                        'Платформа оценки нормативов студентов\nи развития физической формы',
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.bodyMedium,
                       ),
@@ -145,7 +147,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     ? const CircularProgressIndicator()
                                     : ElevatedButton(
                                         onPressed: _login,
-                                        child: const Text('Войти'),
+                                        child: const Text('Войти в систему'),
                                       ),
                               ],
                             ),
@@ -162,7 +164,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           border: Border.all(color: Theme.of(context).dividerColor.withOpacity(0.1)),
                         ),
                         child: Text(
-                          "Демо: root / root (админ), teacher / 123 (преподаватель)",
+                          "Тестовый доступ: администратор root / root, преподаватель teacher / 123",
                           textAlign: TextAlign.center,
                           style: TextStyle(fontSize: Theme.of(context).textTheme.bodySmall?.fontSize, color: Theme.of(context).colorScheme.onSurfaceVariant),
                         ),

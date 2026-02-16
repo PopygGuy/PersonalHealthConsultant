@@ -1,14 +1,16 @@
 import 'package:flutter/material.dart';
 import 'screens/auth/login_screen.dart';
-import 'data/mock_database.dart'; // DatabaseService
 import 'screens/admin/admin_home_screen.dart';
 import 'screens/student/student_dashboard.dart';
 import 'screens/teacher/teacher_home_screen.dart';
 import 'services/session_service.dart';
+import 'models/user.dart';
+import 'models/user_role.dart';
+import 'services/api_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await DatabaseService().init();
+  await ApiService().init();
   runApp(const MyApp());
 }
 
@@ -107,11 +109,16 @@ class MyApp extends StatelessWidget {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: Colors.teal, width: 2),
+                borderSide: const BorderSide(color: Color(0xFF1A73E8), width: 2),
               ),
               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               labelStyle: TextStyle(fontSize: bodyMediumSize, color: Colors.grey[600]),
-              floatingLabelStyle: TextStyle(fontSize: bodyMediumSize, color: Colors.teal),
+              floatingLabelStyle: TextStyle(fontSize: bodyMediumSize, color: const Color(0xFF1A73E8)),
+            ),
+            textSelectionTheme: const TextSelectionThemeData(
+              cursorColor: Color(0xFF1A73E8),
+              selectionColor: Color(0x331A73E8),
+              selectionHandleColor: Color(0xFF1A73E8),
             ),
 
             dialogTheme: DialogThemeData(
@@ -176,12 +183,17 @@ class MyApp extends StatelessWidget {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: Colors.tealAccent, width: 2),
+                borderSide: const BorderSide(color: Color(0xFF8AB4F8), width: 2),
               ),
               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               labelStyle: TextStyle(fontSize: bodyMediumSize, color: const Color(0xFFB0B0B0)), 
-              floatingLabelStyle: TextStyle(fontSize: bodyMediumSize, color: Colors.tealAccent),
+              floatingLabelStyle: TextStyle(fontSize: bodyMediumSize, color: const Color(0xFF8AB4F8)),
               hintStyle: TextStyle(color: Colors.grey.shade500),
+            ),
+            textSelectionTheme: const TextSelectionThemeData(
+              cursorColor: Color(0xFF8AB4F8),
+              selectionColor: Color(0x338AB4F8),
+              selectionHandleColor: Color(0xFF8AB4F8),
             ),
 
             dialogTheme: DialogThemeData(

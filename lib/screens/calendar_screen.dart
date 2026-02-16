@@ -79,13 +79,26 @@ class CalendarScreen extends StatelessWidget {
                           dayPlan.title,
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
+                        isThreeLine: dayPlan.type == DayType.refeed,
                         subtitle: Padding(
                           padding: const EdgeInsets.only(top: 6.0),
-                          child: Row(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              _buildMiniBadge("🔥 ${dayPlan.calories}"),
-                              const SizedBox(width: 8),
-                              _buildMiniBadge("🥩 ${dayPlan.protein}"),
+                              if (dayPlan.type == DayType.refeed) ...[
+                                _buildMiniBadge("🔄 Поддержка"),
+                                const SizedBox(height: 6),
+                              ],
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 6,
+                                children: [
+                                  _buildMiniBadge("🔥 ${dayPlan.calories}"),
+                                  _buildMiniBadge("🥩 ${dayPlan.protein}"),
+                                  _buildMiniBadge("🥑 ${dayPlan.fat}"),
+                                  _buildMiniBadge("🍚 ${dayPlan.carbs}"),
+                                ],
+                              ),
                             ],
                           ),
                         ),
