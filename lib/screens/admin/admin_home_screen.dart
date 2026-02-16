@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../services/step_tracker_service.dart';
 import '../../services/session_service.dart';
 import '../../services/api_service.dart';
 import '../auth/login_screen.dart';
@@ -465,55 +464,51 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   }
 
   Widget _buildStudentsTab() {
-    // Filter logic
-    final selectedFacultyName = _studentFilterFacultyId == null
+    final selectedFaculty = _studentFilterFacultyId == null
         ? null
-        : _faculties.firstWhere((f) => f.id == _studentFilterFacultyId, orElse: () => Faculty(id: '', name: '')).name;
-    final selectedGroupName = _studentFilterGroupId == null
+        : _faculties.firstWhere(
+            (f) => f.id == _studentFilterFacultyId,
+            orElse: () => Faculty(id: '', name: ''),
+          );
+    final selectedGroup = _studentFilterGroupId == null
         ? null
-        : _groups.firstWhere((g) => g.id == _studentFilterGroupId, orElse: () => Group(id: '', name: '', facultyId: '')).name;
-    
+        : _groups.firstWhere(
+            (g) => g.id == _studentFilterGroupId,
+            orElse: () => Group(id: '', name: '', facultyId: ''),
+          );
+
+    final selectedFacultyName = selectedFaculty?.name;
+    final selectedGroupName = selectedGroup?.name;
     final search = _studentSearchQuery.trim().toLowerCase();
-    
+    final groupsForSelectedFaculty = _studentFilterFacultyId == null
+        ? _groups
+        : _groups.where((g) => g.facultyId == _studentFilterFacultyId).toList();
+
     final filteredStudents = _students.where((s) {
       if (_studentFilterFacultyId != null) {
-        // Find student's faculty name or ID mismatch? 
-        // Backend stores faculty_id/group_id or names? Mock stores names. API stores IDs.
-        // Wait, the API mock uses same User class from MockDB which has 'faculty' and 'group' as String names.
-        // But backend sends IDs?
-        // Let's check api_service.dart mapping.
-        // _currentUser = User(..., faculty: null, group: null).
-        // getUsers returns List<User> fromJson.
-        // User.fromJson in mock_database.dart expects 'faculty' and 'group' (names).
-        // The backend `User` schema returns `faculty_id` and `group_id`?
-        // Backend User model has faculty_id and group_id.
-        // Schemas `User` has faculty_id and group_id (UserBase).
-        // But MockDB User has `faculty` (String) and `group` (String).
-        // I need to update User model in Flutter to support IDs or handle mapping.
-        // For now, let's assume we need to match IDs.
-        // BUT MockDB User class has `faculty` and `group` strings.
-        // I should probably update MockDB User class or ApiService mapping.
-        // Let's assume ApiService maps IDs to names if possible, or we change filtering to use whatever we have.
-        // The backend returns { ... faculty_id: "...", group_id: "..." }
-        // The Flutter User.fromJson reads { ... faculty: "...", group: "..." }
-        // So Flutter User will have nulls if json keys don't match.
-        // I should update ApiService to map or MockDatabase User model.
-        // Since I can't easily change MockDatabase heavily used elsewhere, I should check what `User.fromJson` does.
-        // It reads `faculty` and `group`.
-        // I should update the backend to return `faculty_name` and `group_name` or update Flutter model.
-        // Let's ignore complex filtering for a moment and just show list.
-        return true; 
+        final byId = s.facultyId != null && s.facultyId == _studentFilterFacultyId;
+        final byName = selectedFacultyName != null &&
+            selectedFacultyName.isNotEmpty &&
+            s.faculty != null &&
+            s.faculty == selectedFacultyName;
+        if (!byId && !byName) return false;
       }
+
+      if (_studentFilterGroupId != null) {
+        final byId = s.groupId != null && s.groupId == _studentFilterGroupId;
+        final byName = selectedGroupName != null &&
+            selectedGroupName.isNotEmpty &&
+            s.group != null &&
+            s.group == selectedGroupName;
+        if (!byId && !byName) return false;
+      }
+
+      if (search.isNotEmpty) {
+        final haystack = '${s.fullName} ${s.login} ${s.faculty ?? ''} ${s.group ?? ''}'.toLowerCase();
+        if (!haystack.contains(search)) return false;
+      }
+
       return true;
-    }).toList();
-    
-    // Actually, I should fix the filtering.
-    // Let's just filter by search for now to be safe, as IDs vs Names might be tricky without joining.
-    // Or I can update `User` model in a bit.
-    
-    final searchFiltered = _students.where((s) {
-       final haystack = '${s.fullName} ${s.login}'.toLowerCase();
-       return haystack.contains(search);
     }).toList();
 
     final width = MediaQuery.sizeOf(context).width;
@@ -536,30 +531,82 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.all(16),
-            child: TextField(
-              controller: _studentSearchController,
-              onChanged: (value) => setState(() => _studentSearchQuery = value),
-              decoration: InputDecoration(
-                labelText: 'Поиск по ФИО, логину',
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _studentSearchQuery.isEmpty ? null : IconButton(icon: const Icon(Icons.clear), onPressed: () {
-                  _studentSearchController.clear();
-                  setState(() => _studentSearchQuery = '');
-                }),
-              ),
+            child: Column(
+              children: [
+                DropdownButtonFormField<String>(
+                  isExpanded: true,
+                  value: _studentFilterFacultyId,
+                  decoration: const InputDecoration(
+                    labelText: "Факультет",
+                    prefixIcon: Icon(Icons.domain_outlined),
+                  ),
+                  items: [
+                    const DropdownMenuItem<String>(value: null, child: Text("Все факультеты")),
+                    ..._faculties.map(
+                      (f) => DropdownMenuItem<String>(
+                        value: f.id,
+                        child: Text(f.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      ),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    setState(() {
+                      _studentFilterFacultyId = value;
+                      _studentFilterGroupId = null;
+                    });
+                  },
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  isExpanded: true,
+                  value: _studentFilterGroupId,
+                  decoration: const InputDecoration(
+                    labelText: "Группа",
+                    prefixIcon: Icon(Icons.groups_outlined),
+                  ),
+                  items: [
+                    const DropdownMenuItem<String>(value: null, child: Text("Все группы")),
+                    ...groupsForSelectedFaculty.map(
+                      (g) => DropdownMenuItem<String>(
+                        value: g.id,
+                        child: Text(g.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      ),
+                    ),
+                  ],
+                  onChanged: (value) => setState(() => _studentFilterGroupId = value),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _studentSearchController,
+                  onChanged: (value) => setState(() => _studentSearchQuery = value),
+                  decoration: InputDecoration(
+                    labelText: 'Поиск по ФИО, логину',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _studentSearchQuery.isEmpty
+                        ? null
+                        : IconButton(
+                            icon: const Icon(Icons.clear),
+                            onPressed: () {
+                              _studentSearchController.clear();
+                              setState(() => _studentSearchQuery = '');
+                            },
+                          ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
-        if (searchFiltered.isEmpty)
+        if (filteredStudents.isEmpty)
            _buildEmptyState("Студенты не найдены"),
-        if (searchFiltered.isNotEmpty)
+        if (filteredStudents.isNotEmpty)
           SliverPadding(
             padding: const EdgeInsets.all(16),
             sliver: isMobile
               ? SliverList(
                   delegate: SliverChildBuilderDelegate(
-                    (context, index) => _buildStudentCard(searchFiltered[index]),
-                    childCount: searchFiltered.length,
+                    (context, index) => _buildStudentCard(filteredStudents[index]),
+                    childCount: filteredStudents.length,
                   ),
                 )
               : SliverGrid(
@@ -570,8 +617,8 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                     mainAxisExtent: 220,
                   ),
                   delegate: SliverChildBuilderDelegate(
-                    (context, index) => _buildStudentCard(searchFiltered[index]),
-                    childCount: searchFiltered.length,
+                    (context, index) => _buildStudentCard(filteredStudents[index]),
+                    childCount: filteredStudents.length,
                   ),
                 ),
           ),

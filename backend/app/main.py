@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from datetime import timedelta
 from .database import get_db
 from . import models, schemas, auth
+from .config import settings
 from .routers import structures, users, norms, grades, steps
 
 app = FastAPI(title="Personal Health Consultant API")
@@ -12,10 +13,10 @@ app = FastAPI(title="Personal Health Consultant API")
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins
+    allow_origins=settings.cors_origins(),
     allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
 )
 
 app.include_router(structures.router, tags=["structures"])

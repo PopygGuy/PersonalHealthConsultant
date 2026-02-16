@@ -44,17 +44,21 @@ class Norm(NormBase):
 
 class GradeBase(BaseModel):
     student_id: str
-    teacher_id: str
     norm_id: str
     score: int
     comment: Optional[str] = None
 
-class GradeCreate(GradeBase):
-    pass
+class GradeCreate(BaseModel):
+    student_id: str
+    norm_id: str
+    score: int
+    comment: Optional[str] = None
 
 class Grade(GradeBase):
+    teacher_id: str
     id: str
     date: str
     history: List[dict] = []
     class Config:
         from_attributes = True
+
