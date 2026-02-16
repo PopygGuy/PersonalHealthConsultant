@@ -8,7 +8,6 @@ import '../../models/faculty.dart';
 import '../../models/group.dart';
 import '../../models/norm.dart';
 import '../../models/grade.dart';
-import '../../models/user_role.dart';
 
 class TeacherHomeScreen extends StatefulWidget {
   final User user;
@@ -101,6 +100,54 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
         ],
       ),
     );
+  }
+
+  bool _matchesFaculty(User student, String? selectedFacultyId, String? selectedFacultyName) {
+    if (selectedFacultyId == null) return true;
+    if (student.facultyId != null && student.facultyId == selectedFacultyId) return true;
+    if (selectedFacultyName != null &&
+        selectedFacultyName.isNotEmpty &&
+        student.faculty != null &&
+        student.faculty == selectedFacultyName) {
+      return true;
+    }
+    return false;
+  }
+
+  bool _matchesGroup(User student, String? selectedGroupId, String? selectedGroupName) {
+    if (selectedGroupId == null) return true;
+    if (student.groupId != null && student.groupId == selectedGroupId) return true;
+    if (selectedGroupName != null &&
+        selectedGroupName.isNotEmpty &&
+        student.group != null &&
+        student.group == selectedGroupName) {
+      return true;
+    }
+    return false;
+  }
+
+  String _resolveFacultyName(User student) {
+    if (student.faculty != null && student.faculty!.trim().isNotEmpty) return student.faculty!;
+    if (student.facultyId != null) {
+      final faculty = _faculties.firstWhere(
+        (f) => f.id == student.facultyId,
+        orElse: () => Faculty(id: '', name: ''),
+      );
+      if (faculty.name.isNotEmpty) return faculty.name;
+    }
+    return '-';
+  }
+
+  String _resolveGroupName(User student) {
+    if (student.group != null && student.group!.trim().isNotEmpty) return student.group!;
+    if (student.groupId != null) {
+      final group = _groups.firstWhere(
+        (g) => g.id == student.groupId,
+        orElse: () => Group(id: '', name: '', facultyId: ''),
+      );
+      if (group.name.isNotEmpty) return group.name;
+    }
+    return '-';
   }
 
   Widget _buildBody() {
@@ -246,19 +293,14 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     
     // Filter by Faculty
     if (_filterFacultyId != null) {
-       // Assuming faculty name in User matches Faculty name
        final f = _faculties.firstWhere((e) => e.id == _filterFacultyId, orElse: () => Faculty(id: '', name: ''));
-       if (f.name.isNotEmpty) {
-         filteredStudents = filteredStudents.where((s) => s.faculty == f.name).toList();
-       }
+       filteredStudents = filteredStudents.where((s) => _matchesFaculty(s, _filterFacultyId, f.name)).toList();
     }
 
     // Filter by Group
     if (_filterGroupId != null) {
        final g = _groups.firstWhere((e) => e.id == _filterGroupId, orElse: () => Group(id: '', name: '', facultyId: ''));
-       if (g.name.isNotEmpty) {
-         filteredStudents = filteredStudents.where((s) => s.group == g.name).toList();
-       }
+       filteredStudents = filteredStudents.where((s) => _matchesGroup(s, _filterGroupId, g.name)).toList();
     }
 
     final width = MediaQuery.sizeOf(context).width;
@@ -393,7 +435,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    "${s.faculty ?? '-'} / ${s.group ?? '-'}", 
+                    "${_resolveFacultyName(s)} / ${_resolveGroupName(s)}",
                     style: TextStyle(
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                       fontSize: Theme.of(context).textTheme.bodySmall?.fontSize
@@ -483,8 +525,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
         : _groups.firstWhere((g) => g.id == _historyFilterGroupId, orElse: () => Group(id: '', name: '', facultyId: '')).name;
 
     final studentsForDropdown = _students.where((s) {
-      if (selectedFacultyName != null && s.faculty != selectedFacultyName) return false;
-      if (selectedGroupName != null && s.group != selectedGroupName) return false;
+      if (!_matchesFaculty(s, _historyFilterFacultyId, selectedFacultyName)) return false;
+      if (!_matchesGroup(s, _historyFilterGroupId, selectedGroupName)) return false;
       return true;
     }).toList();
 
@@ -493,8 +535,9 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
       if (_historyFilterNormId != null && g.normId != _historyFilterNormId) return false;
 
       final student = studentsById[g.studentId];
-      if (selectedFacultyName != null && (student == null || student.faculty != selectedFacultyName)) return false;
-      if (selectedGroupName != null && (student == null || student.group != selectedGroupName)) return false;
+      if (student == null) return false;
+      if (!_matchesFaculty(student, _historyFilterFacultyId, selectedFacultyName)) return false;
+      if (!_matchesGroup(student, _historyFilterGroupId, selectedGroupName)) return false;
       return true;
     }).toList();
 
@@ -803,8 +846,16 @@ class _GradeFormState extends State<_GradeForm> {
             .name;
 
     final filteredStudents = widget.students.where((s) {
-      if (selectedFacultyName != null && s.faculty != selectedFacultyName) return false;
-      if (selectedGroupName != null && s.group != selectedGroupName) return false;
+      final facultyMatched = _selectedFacultyId == null
+          ? true
+          : ((s.facultyId != null && s.facultyId == _selectedFacultyId) ||
+              (selectedFacultyName != null && selectedFacultyName.isNotEmpty && s.faculty == selectedFacultyName));
+      final groupMatched = _selectedGroupId == null
+          ? true
+          : ((s.groupId != null && s.groupId == _selectedGroupId) ||
+              (selectedGroupName != null && selectedGroupName.isNotEmpty && s.group == selectedGroupName));
+      if (!facultyMatched) return false;
+      if (!groupMatched) return false;
       return true;
     }).toList();
 
@@ -896,12 +947,20 @@ class _GradeFormState extends State<_GradeForm> {
       return;
     }
     
-    await ApiService().createGrade(
+    final created = await ApiService().createGrade(
       studentId: _selectedStudentId!,
       normId: _selectedNormId!,
       score: _score,
       comment: _commentController.text,
     );
+
+    if (created == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Не удалось сохранить оценку. Проверьте соединение и повторите.")),
+      );
+      return;
+    }
 
     widget.onGradeAdded();
 

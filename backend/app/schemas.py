@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 from typing import Optional, List
+from datetime import datetime
 from .models import UserRole
 
 class UserBase(BaseModel):
@@ -57,7 +58,7 @@ class GradeCreate(BaseModel):
 class Grade(GradeBase):
     teacher_id: str
     id: str
-    date: str
+    date: datetime
     history: List[dict] = []
     class Config:
         from_attributes = True
