@@ -54,3 +54,5 @@ app.*.map.json
 /android/build/
 /flutter/
 /tools/flutter/
+/phc.db
+/backend/phc.db

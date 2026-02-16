@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from typing import List
 from ..database import get_db
 from .. import models, schemas, auth
@@ -14,11 +15,22 @@ def read_faculties(db: Session = Depends(get_db), current_user: models.User = De
 def create_faculty(faculty: schemas.FacultyBase, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     if current_user.role != models.UserRole.admin:
         raise HTTPException(status_code=403, detail="Not authorized")
-    db_faculty = models.Faculty(name=faculty.name)
+
+    name = faculty.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Название факультета не может быть пустым")
+    if db.query(models.Faculty).filter(models.Faculty.name == name).first():
+        raise HTTPException(status_code=400, detail="Факультет с таким названием уже существует")
+
+    db_faculty = models.Faculty(name=name)
     db.add(db_faculty)
-    db.commit()
-    db.refresh(db_faculty)
-    return db_faculty
+    try:
+        db.commit()
+        db.refresh(db_faculty)
+        return db_faculty
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Факультет с таким названием уже существует")
 
 @router.delete("/faculties/{faculty_id}")
 def delete_faculty(faculty_id: str, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
@@ -39,11 +51,24 @@ def read_groups(faculty_id: str = None, db: Session = Depends(get_db), current_u
 def create_group(group: schemas.GroupBase, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     if current_user.role != models.UserRole.admin:
         raise HTTPException(status_code=403, detail="Not authorized")
-    db_group = models.Group(name=group.name, faculty_id=group.faculty_id)
+
+    name = group.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Название группы не может быть пустым")
+    if db.query(models.Group).filter(models.Group.name == name).first():
+        raise HTTPException(status_code=400, detail="Группа с таким названием уже существует")
+    if not db.query(models.Faculty).filter(models.Faculty.id == group.faculty_id).first():
+        raise HTTPException(status_code=400, detail="Выбранный факультет не найден")
+
+    db_group = models.Group(name=name, faculty_id=group.faculty_id)
     db.add(db_group)
-    db.commit()
-    db.refresh(db_group)
-    return db_group
+    try:
+        db.commit()
+        db.refresh(db_group)
+        return db_group
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Группа с таким названием уже существует")
 
 @router.delete("/groups/{group_id}")
 def delete_group(group_id: str, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):

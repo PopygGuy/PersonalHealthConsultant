@@ -14,9 +14,10 @@ app = FastAPI(title="Personal Health Consultant API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins(),
+    allow_origin_regex=settings.CORS_ORIGIN_REGEX,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "Accept"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(structures.router, tags=["structures"])

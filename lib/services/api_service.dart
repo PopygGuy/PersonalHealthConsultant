@@ -14,10 +14,12 @@ class ApiService {
   factory ApiService() => _instance;
   ApiService._internal();
 
+  static const String _jwtTokenKey = 'jwt_token';
+  static const String _apiBaseUrlKey = 'api_base_url';
+  static const String _apiBaseUrlDefine = String.fromEnvironment('API_BASE_URL');
+
   final Dio _dio = Dio(BaseOptions(
-    baseUrl: kIsWeb 
-        ? 'http://localhost:8000' 
-        : (Platform.isAndroid ? 'http://10.0.2.2:8000' : 'http://127.0.0.1:8000'),
+    baseUrl: 'http://127.0.0.1:8000',
     connectTimeout: const Duration(seconds: 5),
     receiveTimeout: const Duration(seconds: 3),
   ));
@@ -28,11 +30,57 @@ class ApiService {
   User? _currentUser;
 
   User? get currentUser => _currentUser;
+  String get baseUrl => _dio.options.baseUrl;
 
   Future<void> init() async {
-    print("API Base URL: ${_dio.options.baseUrl}"); // LOG API URL
-    _token = await _storage.read(key: 'jwt_token');
+    final savedBaseUrl = await _storage.read(key: _apiBaseUrlKey);
+    final resolvedBaseUrl = _normalizeBaseUrl(
+      _apiBaseUrlDefine.isNotEmpty
+          ? _apiBaseUrlDefine
+          : (savedBaseUrl?.isNotEmpty == true ? savedBaseUrl! : _defaultBaseUrl()),
+    );
+
+    _dio.options.baseUrl = resolvedBaseUrl;
+    print("API Base URL: ${_dio.options.baseUrl}");
+    _token = await _storage.read(key: _jwtTokenKey);
     // Ideally, validate token or fetch user profile here
+  }
+
+  Future<void> setBaseUrl(String rawBaseUrl) async {
+    final normalized = _normalizeBaseUrl(rawBaseUrl);
+    _dio.options.baseUrl = normalized;
+    await _storage.write(key: _apiBaseUrlKey, value: normalized);
+  }
+
+  String _defaultBaseUrl() {
+    if (kIsWeb) {
+      return 'http://localhost:8000';
+    }
+    if (Platform.isAndroid) {
+      // Emulator default. On real devices set custom server URL in login screen.
+      return 'http://10.0.2.2:8000';
+    }
+    return 'http://127.0.0.1:8000';
+  }
+
+  String _normalizeBaseUrl(String raw) {
+    var value = raw.trim();
+    if (value.isEmpty) return _defaultBaseUrl();
+    if (!value.startsWith('http://') && !value.startsWith('https://')) {
+      value = 'http://$value';
+    }
+
+    final uri = Uri.tryParse(value);
+    if (uri == null || uri.host.isEmpty) {
+      return _defaultBaseUrl();
+    }
+
+    final withPort = uri.hasPort ? uri : uri.replace(port: 8000);
+    var normalized = withPort.toString();
+    if (normalized.endsWith('/')) {
+      normalized = normalized.substring(0, normalized.length - 1);
+    }
+    return normalized;
   }
 
   Future<User?> getMe() async {
@@ -58,7 +106,7 @@ class ApiService {
       if (response.statusCode == 200) {
         final data = response.data;
         _token = data['access_token'];
-        await _storage.write(key: 'jwt_token', value: _token);
+        await _storage.write(key: _jwtTokenKey, value: _token);
 
         // Map response to User object
         // The backend returns {access_token, token_type, role, id, full_name}
@@ -89,7 +137,7 @@ class ApiService {
   Future<void> logout() async {
     _token = null;
     _currentUser = null;
-    await _storage.delete(key: 'jwt_token');
+    await _storage.delete(key: _jwtTokenKey);
   }
 
   // Helper for authenticated requests
@@ -147,13 +195,18 @@ class ApiService {
     }
   }
 
-  Future<Group?> createGroup(String name, String facultyId) async {
+  Future<Group> createGroup(String name, String facultyId) async {
     try {
       final response = await post('/groups', {'name': name, 'faculty_id': facultyId});
       return Group.fromJson(response.data);
+    } on DioException catch (e) {
+      final detail = e.response?.data is Map<String, dynamic>
+          ? (e.response?.data['detail']?.toString() ?? 'Ошибка создания группы')
+          : 'Ошибка создания группы';
+      throw Exception(detail);
     } catch (e) {
       print('createGroup error: $e');
-      return null;
+      throw Exception('Ошибка создания группы');
     }
   }
 

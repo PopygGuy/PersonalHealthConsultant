@@ -793,6 +793,13 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   }
 
   void _showAddGroupDialog() {
+    if (_faculties.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Сначала добавьте хотя бы один факультет')),
+      );
+      return;
+    }
+
     final controller = TextEditingController();
     String? selectedFacultyId;
     final formKey = GlobalKey<FormState>();
@@ -802,25 +809,39 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (context, setStateDialog) => AlertDialog(
           title: const Text("Добавить группу"),
-          content: Form(
-            key: formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextFormField(
-                  controller: controller,
-                  decoration: const InputDecoration(labelText: "Название"),
-                  validator: (v) => _validateNotEmpty(v, 'Название'),
-                ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  value: selectedFacultyId,
-                  decoration: const InputDecoration(labelText: "Факультет"),
-                  items: _faculties.map((f) => DropdownMenuItem(value: f.id, child: Text(f.name))).toList(),
-                  onChanged: (v) => setStateDialog(() => selectedFacultyId = v),
-                  validator: (v) => v == null ? 'Выберите факультет' : null,
-                ),
-              ],
+          content: SingleChildScrollView(
+            child: Form(
+              key: formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextFormField(
+                    controller: controller,
+                    decoration: const InputDecoration(labelText: "Название"),
+                    validator: (v) => _validateNotEmpty(v, 'Название'),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    isExpanded: true,
+                    value: selectedFacultyId,
+                    decoration: const InputDecoration(labelText: "Факультет"),
+                    items: _faculties
+                        .map(
+                          (f) => DropdownMenuItem<String>(
+                            value: f.id,
+                            child: Text(
+                              f.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (v) => setStateDialog(() => selectedFacultyId = v),
+                    validator: (v) => v == null ? 'Выберите факультет' : null,
+                  ),
+                ],
+              ),
             ),
           ),
           actions: [
@@ -828,9 +849,16 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             ElevatedButton(
               onPressed: () async {
                 if (formKey.currentState!.validate()) {
-                  await _api.createGroup(controller.text.trim(), selectedFacultyId!);
-                  _loadData();
-                  if (mounted) Navigator.pop(ctx);
+                  try {
+                    await _api.createGroup(controller.text.trim(), selectedFacultyId!);
+                    _loadData();
+                    if (mounted) Navigator.pop(ctx);
+                  } catch (e) {
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+                    );
+                  }
                 }
               },
               child: const Text("Создать"),

@@ -18,6 +18,75 @@ class _LoginScreenState extends State<LoginScreen> {
   final _loginController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isLoading = false;
+  bool _isServerLoading = true;
+  String _serverUrl = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadServerUrl();
+  }
+
+  Future<void> _loadServerUrl() async {
+    await ApiService().init();
+    if (!mounted) return;
+    setState(() {
+      _serverUrl = ApiService().baseUrl;
+      _isServerLoading = false;
+    });
+  }
+
+  Future<void> _showServerSettingsDialog() async {
+    final controller = TextEditingController(text: _serverUrl);
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Адрес сервера'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: controller,
+              decoration: const InputDecoration(
+                labelText: 'API URL',
+                hintText: 'Например: 192.168.1.42:8000',
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Для реального Android-устройства укажите IP вашего ноутбука в Wi-Fi сети.',
+              style: TextStyle(fontSize: 12),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              await ApiService().setBaseUrl(controller.text);
+              if (!mounted) return;
+              setState(() => _serverUrl = ApiService().baseUrl);
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Сервер обновлен: ${ApiService().baseUrl}')),
+              );
+            },
+            child: const Text('Сохранить'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _loginController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
 
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
@@ -155,6 +224,23 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                       const SizedBox(height: 24),
+                      Card(
+                        elevation: 0,
+                        child: ListTile(
+                          leading: const Icon(Icons.dns_outlined),
+                          title: const Text('Сервер API'),
+                          subtitle: Text(
+                            _isServerLoading ? 'Загрузка...' : _serverUrl,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          trailing: TextButton(
+                            onPressed: _isServerLoading ? null : _showServerSettingsDialog,
+                            child: const Text('Изменить'),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
                       // Hint text
                       Container(
                         padding: const EdgeInsets.all(12),
