@@ -16,7 +16,8 @@ class ApiService {
 
   static const String _jwtTokenKey = 'jwt_token';
   static const String _apiBaseUrlKey = 'api_base_url';
-  static const String _apiBaseUrlDefine = String.fromEnvironment('API_BASE_URL');
+  static const String _apiBaseUrlDefine =
+      String.fromEnvironment('API_BASE_URL');
 
   final Dio _dio = Dio(BaseOptions(
     baseUrl: 'http://127.0.0.1:8000',
@@ -37,7 +38,9 @@ class ApiService {
     final resolvedBaseUrl = _normalizeBaseUrl(
       _apiBaseUrlDefine.isNotEmpty
           ? _apiBaseUrlDefine
-          : (savedBaseUrl?.isNotEmpty == true ? savedBaseUrl! : _defaultBaseUrl()),
+          : (savedBaseUrl?.isNotEmpty == true
+              ? savedBaseUrl!
+              : _defaultBaseUrl()),
     );
 
     _dio.options.baseUrl = resolvedBaseUrl;
@@ -98,10 +101,12 @@ class ApiService {
 
   Future<User?> login(String username, String password) async {
     try {
-      final response = await _dio.post('/token', data: {
-        'username': username,
-        'password': password,
-      }, options: Options(contentType: Headers.formUrlEncodedContentType));
+      final response = await _dio.post('/token',
+          data: {
+            'username': username,
+            'password': password,
+          },
+          options: Options(contentType: Headers.formUrlEncodedContentType));
 
       if (response.statusCode == 200) {
         final data = response.data;
@@ -152,19 +157,25 @@ class ApiService {
 
   // Helper for authenticated requests
   Future<Response> get(String path) async {
-    return _dio.get(path, options: Options(headers: {'Authorization': 'Bearer $_token'}));
+    return _dio.get(path,
+        options: Options(headers: {'Authorization': 'Bearer $_token'}));
   }
 
   Future<Response> post(String path, dynamic data) async {
-    return _dio.post(path, data: data, options: Options(headers: {'Authorization': 'Bearer $_token'}));
+    return _dio.post(path,
+        data: data,
+        options: Options(headers: {'Authorization': 'Bearer $_token'}));
   }
 
   Future<Response> put(String path, dynamic data) async {
-    return _dio.put(path, data: data, options: Options(headers: {'Authorization': 'Bearer $_token'}));
+    return _dio.put(path,
+        data: data,
+        options: Options(headers: {'Authorization': 'Bearer $_token'}));
   }
 
   Future<Response> delete(String path) async {
-    return _dio.delete(path, options: Options(headers: {'Authorization': 'Bearer $_token'}));
+    return _dio.delete(path,
+        options: Options(headers: {'Authorization': 'Bearer $_token'}));
   }
 
   // --- Admin API ---
@@ -200,7 +211,8 @@ class ApiService {
 
   Future<List<Group>> getGroups({String? facultyId}) async {
     try {
-      final path = facultyId != null ? '/groups?faculty_id=$facultyId' : '/groups';
+      final path =
+          facultyId != null ? '/groups?faculty_id=$facultyId' : '/groups';
       final response = await get(path);
       return (response.data as List).map((e) => Group.fromJson(e)).toList();
     } catch (e) {
@@ -211,7 +223,8 @@ class ApiService {
 
   Future<Group> createGroup(String name, String facultyId) async {
     try {
-      final response = await post('/groups', {'name': name, 'faculty_id': facultyId});
+      final response =
+          await post('/groups', {'name': name, 'faculty_id': facultyId});
       return Group.fromJson(response.data);
     } on DioException catch (e) {
       final detail = e.response?.data is Map<String, dynamic>
@@ -246,7 +259,8 @@ class ApiService {
       };
     } on DioException catch (e) {
       final detail = e.response?.data is Map<String, dynamic>
-          ? (e.response?.data['detail']?.toString() ?? 'Ошибка восстановления справочников')
+          ? (e.response?.data['detail']?.toString() ??
+              'Ошибка восстановления справочников')
           : 'Ошибка восстановления справочников';
       throw Exception(detail);
     } catch (e) {
@@ -286,7 +300,8 @@ class ApiService {
       return User.fromJson(response.data);
     } on DioException catch (e) {
       final detail = e.response?.data is Map<String, dynamic>
-          ? (e.response?.data['detail']?.toString() ?? 'Ошибка создания пользователя')
+          ? (e.response?.data['detail']?.toString() ??
+              'Ошибка создания пользователя')
           : 'Ошибка создания пользователя';
       throw Exception(detail);
     } catch (e) {
@@ -360,15 +375,26 @@ class ApiService {
     }
   }
 
-  Future<List<Grade>> getGrades({String? studentId, String? normId}) async {
+  Future<List<Grade>> getGrades({
+    String? studentId,
+    String? normId,
+    String? academicYear,
+    int? course,
+    int? semester,
+  }) async {
     try {
       final queryParams = <String, dynamic>{};
       if (studentId != null) queryParams['student_id'] = studentId;
       if (normId != null) queryParams['norm_id'] = normId;
-      
+      if (academicYear != null && academicYear.trim().isNotEmpty) {
+        queryParams['academic_year'] = academicYear.trim();
+      }
+      if (course != null) queryParams['course'] = course.toString();
+      if (semester != null) queryParams['semester'] = semester.toString();
+
       final queryString = Uri(queryParameters: queryParams).query;
       final path = queryString.isNotEmpty ? '/grades?$queryString' : '/grades';
-      
+
       final response = await get(path);
       return (response.data as List).map((e) => Grade.fromJson(e)).toList();
     } catch (e) {
@@ -380,6 +406,9 @@ class ApiService {
   Future<Grade?> createGrade({
     required String studentId,
     required String normId,
+    required String academicYear,
+    required int course,
+    required int semester,
     required int score,
     String? comment,
   }) async {
@@ -387,13 +416,22 @@ class ApiService {
       final response = await post('/grades', {
         'student_id': studentId,
         'norm_id': normId,
+        'academic_year': academicYear,
+        'course': course,
+        'semester': semester,
         'score': score,
         'comment': comment,
       });
       return Grade.fromJson(response.data);
+    } on DioException catch (e) {
+      final detail = e.response?.data is Map<String, dynamic>
+          ? (e.response?.data['detail']?.toString() ??
+              'Ошибка выставления оценки')
+          : 'Ошибка выставления оценки';
+      throw Exception(detail);
     } catch (e) {
       print('createGrade error: $e');
-      return null;
+      throw Exception('Ошибка выставления оценки');
     }
   }
 

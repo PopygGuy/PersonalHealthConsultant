@@ -12,6 +12,11 @@ class CalendarScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final width = MediaQuery.sizeOf(context).width;
+    final ui = width < 360 ? 0.92 : (width < 600 ? 1.0 : 1.12);
+    final dateColWidth = width < 360 ? 44.0 : (width < 600 ? 50.0 : 60.0);
     return Scaffold(
       appBar: AppBar(title: const Text('Календарь питания (14 дней)')),
       body: ResponsiveWrapper(
@@ -24,60 +29,77 @@ class CalendarScreen extends StatelessWidget {
             final isToday = index == 0;
 
             return Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding:
+                  EdgeInsets.symmetric(horizontal: 16 * ui, vertical: 8 * ui),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Date Column
                   SizedBox(
-                    width: 50,
+                    width: dateColWidth,
                     child: Column(
                       children: [
                         Text(
                           "${date.day}",
                           style: TextStyle(
-                            fontSize: 20,
+                            fontSize: 20 * ui,
                             fontWeight: FontWeight.bold,
-                            color: isToday ? Theme.of(context).primaryColor : Colors.grey[800],
+                            color: isToday
+                                ? theme.colorScheme.primary
+                                : theme.colorScheme.onSurface,
                           ),
                         ),
                         Text(
                           _getWeekdayName(date.weekday),
                           style: TextStyle(
-                            fontSize: 12,
+                            fontSize: 12 * ui,
                             fontWeight: FontWeight.bold,
-                            color: isToday ? Theme.of(context).primaryColor : Colors.grey[500],
+                            color: isToday
+                                ? theme.colorScheme.primary
+                                : theme.colorScheme.onSurfaceVariant,
                           ),
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  
+                  SizedBox(width: 12 * ui),
+
                   // Content Card
                   Expanded(
                     child: Container(
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: isDark
+                            ? theme.colorScheme.surfaceContainer
+                            : theme.colorScheme.surface,
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(
-                          color: isToday ? Theme.of(context).primaryColor.withOpacity(0.5) : Colors.grey.shade200,
+                          color: isToday
+                              ? theme.colorScheme.primary.withOpacity(0.55)
+                              : theme.colorScheme.outlineVariant
+                                  .withOpacity(0.75),
                           width: isToday ? 2 : 1,
                         ),
                         boxShadow: [
                           if (isToday)
                             BoxShadow(
-                              color: Theme.of(context).primaryColor.withOpacity(0.1),
+                              color: theme.colorScheme.primary.withOpacity(
+                                isDark ? 0.22 : 0.10,
+                              ),
                               blurRadius: 8,
                               offset: const Offset(0, 4),
                             ),
                         ],
                       ),
                       child: ListTile(
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        contentPadding: EdgeInsets.symmetric(
+                            horizontal: 16 * ui, vertical: 8 * ui),
                         title: Text(
                           dayPlan.title,
-                          style: const TextStyle(fontWeight: FontWeight.bold),
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: theme.colorScheme.onSurface,
+                            fontSize: 18 * ui,
+                          ),
                         ),
                         isThreeLine: dayPlan.type == DayType.refeed,
                         subtitle: Padding(
@@ -86,33 +108,42 @@ class CalendarScreen extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               if (dayPlan.type == DayType.refeed) ...[
-                                _buildMiniBadge("🔄 Поддержка"),
+                                _buildMiniBadge(context, "🔄 Поддержка", ui),
                                 const SizedBox(height: 6),
                               ],
                               Wrap(
                                 spacing: 8,
                                 runSpacing: 6,
                                 children: [
-                                  _buildMiniBadge("🔥 ${dayPlan.calories}"),
-                                  _buildMiniBadge("🥩 ${dayPlan.protein}"),
-                                  _buildMiniBadge("🥑 ${dayPlan.fat}"),
-                                  _buildMiniBadge("🍚 ${dayPlan.carbs}"),
+                                  _buildMiniBadge(
+                                      context, "🔥 ${dayPlan.calories}", ui),
+                                  _buildMiniBadge(
+                                      context, "🥩 ${dayPlan.protein}", ui),
+                                  _buildMiniBadge(
+                                      context, "🥑 ${dayPlan.fat}", ui),
+                                  _buildMiniBadge(
+                                      context, "🍚 ${dayPlan.carbs}", ui),
                                 ],
                               ),
                             ],
                           ),
                         ),
                         trailing: Container(
-                          padding: const EdgeInsets.all(8),
+                          padding: EdgeInsets.all(8 * ui),
                           decoration: BoxDecoration(
-                            color: _getColorForType(dayPlan.type).withOpacity(0.1),
+                            color: _getColorForType(dayPlan.type).withOpacity(
+                              isDark ? 0.18 : 0.12,
+                            ),
                             shape: BoxShape.circle,
                           ),
                           child: Icon(
-                            dayPlan.type == DayType.training ? Icons.fitness_center : 
-                            dayPlan.type == DayType.refeed ? Icons.restaurant : Icons.spa,
+                            dayPlan.type == DayType.training
+                                ? Icons.fitness_center
+                                : dayPlan.type == DayType.refeed
+                                    ? Icons.restaurant
+                                    : Icons.spa,
                             color: _getColorForType(dayPlan.type),
-                            size: 20,
+                            size: 20 * ui,
                           ),
                         ),
                       ),
@@ -127,22 +158,35 @@ class CalendarScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildMiniBadge(String text) {
+  Widget _buildMiniBadge(BuildContext context, String text, [double ui = 1.0]) {
+    final theme = Theme.of(context);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      padding: EdgeInsets.symmetric(horizontal: 8 * ui, vertical: 2 * ui),
       decoration: BoxDecoration(
-        color: Colors.grey[100],
-        borderRadius: BorderRadius.circular(4),
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+            color: theme.colorScheme.outlineVariant.withOpacity(0.7)),
       ),
-      child: Text(text, style: TextStyle(fontSize: 12, color: Colors.grey[700])),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 12 * ui,
+          color: theme.colorScheme.onSurface,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
     );
   }
 
   Color _getColorForType(DayType type) {
     switch (type) {
-      case DayType.training: return Colors.blue;
-      case DayType.rest: return Colors.green;
-      case DayType.refeed: return Colors.orange;
+      case DayType.training:
+        return Colors.blue;
+      case DayType.rest:
+        return Colors.green;
+      case DayType.refeed:
+        return Colors.orange;
     }
   }
 
@@ -151,8 +195,9 @@ class CalendarScreen extends StatelessWidget {
     return days[weekday - 1];
   }
 
-  DayPlan _getDayTypeForWeekday(DateTime date, DietPlan plan, UserProfile user) {
-    // Logic: 
+  DayPlan _getDayTypeForWeekday(
+      DateTime date, DietPlan plan, UserProfile user) {
+    // Logic:
     // If Active/Gain -> More Training days (e.g. Mon, Wed, Fri)
     // If Sedentary/Lose -> Less Training days (e.g. Mon, Thu)
     // Refeed usually on Sunday or heavy training day
@@ -161,20 +206,20 @@ class CalendarScreen extends StatelessWidget {
 
     // Simple Pattern Logic
     if (user.goal == HealthGoal.gainMuscle) {
-       // Mon, Wed, Fri, Sat = Training
-       if ([1, 3, 5, 6].contains(day)) return plan.trainingDay;
-       if (day == 7) return plan.refeedDay; // Sunday Refeed
-       return plan.restDay;
+      // Mon, Wed, Fri, Sat = Training
+      if ([1, 3, 5, 6].contains(day)) return plan.trainingDay;
+      if (day == 7) return plan.refeedDay; // Sunday Refeed
+      return plan.restDay;
     } else if (user.activityLevel == ActivityLevel.sedentary) {
-       // Mon, Thu = Training
-       if ([1, 4].contains(day)) return plan.trainingDay;
-       if (day == 6) return plan.refeedDay; // Saturday Refeed
-       return plan.restDay;
+      // Mon, Thu = Training
+      if ([1, 4].contains(day)) return plan.trainingDay;
+      if (day == 6) return plan.refeedDay; // Saturday Refeed
+      return plan.restDay;
     } else {
-       // Standard: Mon, Wed, Fri
-       if ([1, 3, 5].contains(day)) return plan.trainingDay;
-       if (day == 6) return plan.refeedDay;
-       return plan.restDay;
+      // Standard: Mon, Wed, Fri
+      if ([1, 3, 5].contains(day)) return plan.trainingDay;
+      if (day == 6) return plan.refeedDay;
+      return plan.restDay;
     }
   }
 }

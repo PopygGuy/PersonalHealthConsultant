@@ -11,10 +11,27 @@ class ResultScreen extends StatelessWidget {
 
   const ResultScreen({super.key, required this.plan, required this.user});
 
+  double _uiScale(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    if (width < 360) return 0.92;
+    if (width < 600) return 1.0;
+    if (width < 900) return 1.08;
+    return 1.15;
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+    final isDark = theme.brightness == Brightness.dark;
+    final width = MediaQuery.sizeOf(context).width;
+    final ui = _uiScale(context);
+    final compactTabs = width < 390;
+    final selectedTabColor =
+        isDark ? const Color(0xFF4DA3FF) : theme.colorScheme.primary;
+    final unselectedTabColor = isDark
+        ? theme.colorScheme.onSurface.withOpacity(0.78)
+        : theme.colorScheme.onSurfaceVariant;
+
     return DefaultTabController(
       length: 3,
       child: Scaffold(
@@ -27,43 +44,58 @@ class ResultScreen extends StatelessWidget {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => CalendarScreen(plan: plan, user: user),
+                    builder: (context) =>
+                        CalendarScreen(plan: plan, user: user),
                   ),
                 );
               },
             ),
           ],
           bottom: TabBar(
-            indicatorColor: theme.primaryColor,
-            labelColor: theme.primaryColor,
-            unselectedLabelColor: Colors.grey[700], // Darker grey for better visibility
-            labelStyle: const TextStyle(fontWeight: FontWeight.bold), // Bold for selected
-            unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600), // Semi-bold for unselected
-            tabs: const [
-              Tab(text: 'Тренировка'),
-              Tab(text: 'Отдых'),
-              Tab(text: 'Рефид (поддержка)'),
+            isScrollable: compactTabs,
+            indicatorColor: selectedTabColor,
+            labelColor: selectedTabColor,
+            unselectedLabelColor: unselectedTabColor,
+            labelStyle: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 14 * ui,
+            ),
+            unselectedLabelStyle: TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: 13 * ui,
+            ),
+            tabs: [
+              const Tab(text: 'Тренировка'),
+              const Tab(text: 'Отдых'),
+              Tab(text: compactTabs ? 'Рефид' : 'Рефид (поддержка)'),
             ],
           ),
         ),
         body: TabBarView(
           children: [
-            _buildDayPage(context, plan.trainingDay, Colors.blue),
-            _buildDayPage(context, plan.restDay, Colors.green),
-            _buildDayPage(context, plan.refeedDay, Colors.orange),
+            _buildDayPage(context, plan.trainingDay, Colors.blue, ui),
+            _buildDayPage(context, plan.restDay, Colors.green, ui),
+            _buildDayPage(context, plan.refeedDay, Colors.orange, ui),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildDayPage(BuildContext context, DayPlan day, Color accentColor) {
+  Widget _buildDayPage(
+    BuildContext context,
+    DayPlan day,
+    Color accentColor,
+    double ui,
+  ) {
     // We stick to the theme for structure, but use accentColor for specific highlighting logic
     // However, to be "Unified", we should probably use the Theme's primary color or neutral styles
     // But the user liked the distinction. I will keep the accent colors but ensure shapes match theme.
-    
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16.0),
+      padding: EdgeInsets.all(16.0 * ui),
       child: ResponsiveWrapper(
         maxWidth: 600,
         child: Column(
@@ -72,96 +104,144 @@ class ResultScreen extends StatelessWidget {
             // Header Card
             Card(
               elevation: 0,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-              color: accentColor.withOpacity(0.1),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24 * ui),
+              ),
+              color: isDark
+                  ? Color.alphaBlend(accentColor.withOpacity(0.20),
+                      theme.colorScheme.surfaceContainerHighest)
+                  : accentColor.withOpacity(0.10),
               child: Padding(
-                padding: const EdgeInsets.all(24.0),
+                padding: EdgeInsets.all(24.0 * ui),
                 child: Column(
                   children: [
                     Text(
                       day.title,
                       style: TextStyle(
-                        fontSize: 24,
+                        fontSize: 24 * ui,
                         fontWeight: FontWeight.bold,
-                        color: accentColor, 
+                        color: accentColor,
                       ),
                       textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: 8),
+                    SizedBox(height: 8 * ui),
                     Text(
                       "${day.calories}",
                       style: TextStyle(
-                        fontSize: 48,
+                        fontSize: 48 * ui,
                         fontWeight: FontWeight.w900,
-                        color: Colors.grey[800],
+                        color: theme.colorScheme.onSurface,
                         height: 1.0,
                       ),
                     ),
                     Text(
                       "ккал",
                       style: TextStyle(
-                        fontSize: 16,
+                        fontSize: 16 * ui,
                         fontWeight: FontWeight.w500,
-                        color: Colors.grey[600],
+                        color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    SizedBox(height: 16 * ui),
                     Text(
                       day.description,
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.grey[700], height: 1.4),
+                      style: TextStyle(
+                        fontSize: 14 * ui,
+                        color: theme.colorScheme.onSurfaceVariant,
+                        height: 1.4,
+                      ),
                     ),
                   ],
                 ),
               ),
             ),
-            const SizedBox(height: 24),
+            SizedBox(height: 24 * ui),
 
             // Macros Row
-            const Text("Баланс БЖУ", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 16),
+            Text(
+              "Баланс БЖУ",
+              style: TextStyle(
+                fontSize: 18 * ui,
+                fontWeight: FontWeight.bold,
+                color: theme.colorScheme.onSurface,
+              ),
+            ),
+            SizedBox(height: 16 * ui),
             Row(
               children: [
-                Expanded(child: _buildMacroCard(context, "Белки", "${day.protein}г", Colors.blue)),
-                const SizedBox(width: 12),
-                Expanded(child: _buildMacroCard(context, "Жиры", "${day.fat}г", Colors.orange)),
-                const SizedBox(width: 12),
-                Expanded(child: _buildMacroCard(context, "Углеводы", "${day.carbs}г", Colors.green)),
+                Expanded(
+                  child: _buildMacroCard(
+                    context,
+                    "Белки",
+                    "${day.protein}г",
+                    Colors.blue,
+                    ui,
+                  ),
+                ),
+                SizedBox(width: 12 * ui),
+                Expanded(
+                  child: _buildMacroCard(
+                    context,
+                    "Жиры",
+                    "${day.fat}г",
+                    Colors.orange,
+                    ui,
+                  ),
+                ),
+                SizedBox(width: 12 * ui),
+                Expanded(
+                  child: _buildMacroCard(
+                    context,
+                    "Углеводы",
+                    "${day.carbs}г",
+                    Colors.green,
+                    ui,
+                  ),
+                ),
               ],
             ),
-            
-            const SizedBox(height: 32),
-            _buildAdviceSection(context, day, accentColor),
+
+            SizedBox(height: 32 * ui),
+            _buildAdviceSection(context, day, accentColor, ui),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildMacroCard(BuildContext context, String label, String value, Color color) {
+  Widget _buildMacroCard(
+    BuildContext context,
+    String label,
+    String value,
+    Color color,
+    double ui,
+  ) {
+    final theme = Theme.of(context);
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+      padding: EdgeInsets.symmetric(vertical: 16 * ui, horizontal: 8 * ui),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey.shade200),
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(16 * ui),
+        border: Border.all(
+            color: theme.colorScheme.outlineVariant.withOpacity(0.65)),
       ),
       child: Column(
         children: [
           Text(
             value,
             style: TextStyle(
-              fontSize: 20,
+              fontSize: 20 * ui,
               fontWeight: FontWeight.bold,
               color: color,
             ),
           ),
-          const SizedBox(height: 4),
+          SizedBox(height: 4 * ui),
           Text(
             label,
             style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey[500],
+              fontSize: 12 * ui,
+              color: theme.colorScheme.onSurfaceVariant,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -170,38 +250,68 @@ class ResultScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildAdviceSection(BuildContext context, DayPlan day, Color color) {
+  Widget _buildAdviceSection(
+    BuildContext context,
+    DayPlan day,
+    Color color,
+    double ui,
+  ) {
+    final theme = Theme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            Icon(Icons.tips_and_updates_outlined, color: color),
-            const SizedBox(width: 8),
-            const Text("Советы дня", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Icon(Icons.tips_and_updates_outlined, color: color, size: 22 * ui),
+            SizedBox(width: 8 * ui),
+            Text(
+              "Советы дня",
+              style: TextStyle(
+                fontSize: 18 * ui,
+                fontWeight: FontWeight.bold,
+                color: theme.colorScheme.onSurface,
+              ),
+            ),
           ],
         ),
-        const SizedBox(height: 16),
-        ...day.tips.map((tip) => Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.grey.shade200),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: Icon(Icons.check_circle, color: color.withOpacity(0.8), size: 20),
-              ),
-              const SizedBox(width: 12),
-              Expanded(child: Text(tip, style: const TextStyle(fontSize: 14, height: 1.4))),
-            ],
-          ),
-        )).toList(),
+        SizedBox(height: 16 * ui),
+        ...day.tips
+            .map((tip) => Container(
+                  margin: EdgeInsets.only(bottom: 12 * ui),
+                  padding: EdgeInsets.all(16 * ui),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surface,
+                    borderRadius: BorderRadius.circular(16 * ui),
+                    border: Border.all(
+                        color:
+                            theme.colorScheme.outlineVariant.withOpacity(0.65)),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: EdgeInsets.only(top: 2 * ui),
+                        child: Icon(
+                          Icons.check_circle,
+                          color: color.withOpacity(0.8),
+                          size: 20 * ui,
+                        ),
+                      ),
+                      SizedBox(width: 12 * ui),
+                      Expanded(
+                        child: Text(
+                          tip,
+                          style: TextStyle(
+                            fontSize: 14 * ui,
+                            height: 1.4,
+                            color: theme.colorScheme.onSurface,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ))
+            .toList(),
       ],
     );
   }

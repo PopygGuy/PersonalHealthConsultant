@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/session_service.dart';
 import '../../services/api_service.dart';
 import '../../widgets/responsive_wrapper.dart';
@@ -35,15 +36,96 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   // Filters State
   String? _filterFacultyId;
   String? _filterGroupId;
+  String _studentSearchQuery = '';
   String? _historyFilterFacultyId;
   String? _historyFilterGroupId;
   String? _historyFilterStudentId;
   String? _historyFilterNormId;
+  String? _historyFilterAcademicYear;
+  int? _historyFilterCourse;
+  int? _historyFilterSemester;
+  String _historySearchQuery = '';
+  DateTime? _journalVisibleFrom;
+
+  String _defaultAcademicYear() {
+    final now = DateTime.now();
+    final startYear = now.month >= 9 ? now.year : now.year - 1;
+    return '$startYear/${startYear + 1}';
+  }
+
+  List<String> _academicYearOptions() {
+    final now = DateTime.now();
+    final currentStartYear = now.month >= 9 ? now.year : now.year - 1;
+    final years = <String>{
+      ...List<String>.generate(6, (i) {
+        final start = currentStartYear - 2 + i;
+        return '$start/${start + 1}';
+      }),
+      ..._grades.map((g) => g.academicYear.trim()).where((y) => y.isNotEmpty),
+    }.toList();
+    years.sort((a, b) => b.compareTo(a));
+    return years;
+  }
 
   @override
   void initState() {
     super.initState();
+    _loadHistoryPreferences();
     _loadData();
+  }
+
+  Future<void> _loadHistoryPreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw =
+        prefs.getString('teacher_journal_visible_from_${widget.user.id}');
+    if (raw == null || raw.isEmpty) return;
+    final parsed = DateTime.tryParse(raw);
+    if (!mounted || parsed == null) return;
+    setState(() => _journalVisibleFrom = parsed);
+  }
+
+  Future<void> _saveHistoryPreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = 'teacher_journal_visible_from_${widget.user.id}';
+    if (_journalVisibleFrom == null) {
+      await prefs.remove(key);
+      return;
+    }
+    await prefs.setString(key, _journalVisibleFrom!.toIso8601String());
+  }
+
+  Future<void> _clearJournalVisualOnly() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Очистить журнал визуально?'),
+        content: const Text(
+          'Будут скрыты старые записи, а оценки студентов в базе останутся без изменений.\n\n'
+          'Показываться будут записи только за последний месяц. Продолжить?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Уверены'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+    setState(() {
+      _journalVisibleFrom = DateTime.now().subtract(const Duration(days: 30));
+    });
+    await _saveHistoryPreferences();
+  }
+
+  Future<void> _resetJournalVisibility() async {
+    setState(() => _journalVisibleFrom = null);
+    await _saveHistoryPreferences();
   }
 
   Future<void> _loadData() async {
@@ -53,7 +135,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
       final faculties = await _api.getFaculties();
       final groups = await _api.getGroups();
       final norms = await _api.getNorms();
-      final grades = await _api.getGrades(); // Get all grades for now, or filter by teacher if backend supports it
+      final grades = await _api
+          .getGrades(); // Get all grades for now, or filter by teacher if backend supports it
 
       setState(() {
         _students = students;
@@ -72,9 +155,9 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _isLoading 
-        ? const Center(child: CircularProgressIndicator()) 
-        : _buildBody(),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _buildBody(),
       floatingActionButton: _buildFab(),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
@@ -105,9 +188,11 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     );
   }
 
-  bool _matchesFaculty(User student, String? selectedFacultyId, String? selectedFacultyName) {
+  bool _matchesFaculty(
+      User student, String? selectedFacultyId, String? selectedFacultyName) {
     if (selectedFacultyId == null) return true;
-    if (student.facultyId != null && student.facultyId == selectedFacultyId) return true;
+    if (student.facultyId != null && student.facultyId == selectedFacultyId)
+      return true;
     if (selectedFacultyName != null &&
         selectedFacultyName.isNotEmpty &&
         student.faculty != null &&
@@ -117,9 +202,11 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     return false;
   }
 
-  bool _matchesGroup(User student, String? selectedGroupId, String? selectedGroupName) {
+  bool _matchesGroup(
+      User student, String? selectedGroupId, String? selectedGroupName) {
     if (selectedGroupId == null) return true;
-    if (student.groupId != null && student.groupId == selectedGroupId) return true;
+    if (student.groupId != null && student.groupId == selectedGroupId)
+      return true;
     if (selectedGroupName != null &&
         selectedGroupName.isNotEmpty &&
         student.group != null &&
@@ -130,7 +217,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   }
 
   String _resolveFacultyName(User student) {
-    if (student.faculty != null && student.faculty!.trim().isNotEmpty) return student.faculty!;
+    if (student.faculty != null && student.faculty!.trim().isNotEmpty)
+      return student.faculty!;
     if (student.facultyId != null) {
       final faculty = _faculties.firstWhere(
         (f) => f.id == student.facultyId,
@@ -142,7 +230,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   }
 
   String _resolveGroupName(User student) {
-    if (student.group != null && student.group!.trim().isNotEmpty) return student.group!;
+    if (student.group != null && student.group!.trim().isNotEmpty)
+      return student.group!;
     if (student.groupId != null) {
       final group = _groups.firstWhere(
         (g) => g.id == student.groupId,
@@ -191,7 +280,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
               color: theme.colorScheme.primaryContainer,
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(icon, size: 18, color: theme.colorScheme.onPrimaryContainer),
+            child: Icon(icon,
+                size: 18, color: theme.colorScheme.onPrimaryContainer),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -227,7 +317,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   }
 
   Widget _buildProfileTab() {
-    final myGradesCount = _grades.where((g) => g.teacherId == widget.user.id).length;
+    final myGradesCount =
+        _grades.where((g) => g.teacherId == widget.user.id).length;
     final normsCount = _norms.length;
     final studentsCount = _students.length;
 
@@ -248,11 +339,14 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                   child: ListTile(
                     leading: UserAvatar(
                       displayName: widget.user.fullName,
-                      seed: widget.user.id.isNotEmpty ? widget.user.id : widget.user.login,
+                      seed: widget.user.id.isNotEmpty
+                          ? widget.user.id
+                          : widget.user.login,
                       role: UserRole.teacher,
                       radius: 18,
                     ),
-                    title: Text(widget.user.fullName, style: const TextStyle(fontWeight: FontWeight.w700)),
+                    title: Text(widget.user.fullName,
+                        style: const TextStyle(fontWeight: FontWeight.w700)),
                     subtitle: Text("Логин: ${widget.user.login}"),
                   ),
                 ),
@@ -280,7 +374,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                     await _api.logout();
                     if (!mounted) return;
                     Navigator.of(context).pushAndRemoveUntil(
-                      MaterialPageRoute(builder: (context) => const LoginScreen()),
+                      MaterialPageRoute(
+                          builder: (context) => const LoginScreen()),
                       (route) => false,
                     );
                   },
@@ -298,17 +393,59 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   // --- TAB 1: Students List (With Filters) ---
   Widget _buildStudentsTab() {
     List<User> filteredStudents = _students;
-    
+
     // Filter by Faculty
     if (_filterFacultyId != null) {
-       final f = _faculties.firstWhere((e) => e.id == _filterFacultyId, orElse: () => Faculty(id: '', name: ''));
-       filteredStudents = filteredStudents.where((s) => _matchesFaculty(s, _filterFacultyId, f.name)).toList();
+      final f = _faculties.firstWhere((e) => e.id == _filterFacultyId,
+          orElse: () => Faculty(id: '', name: ''));
+      filteredStudents = filteredStudents
+          .where((s) => _matchesFaculty(s, _filterFacultyId, f.name))
+          .toList();
     }
 
     // Filter by Group
     if (_filterGroupId != null) {
-       final g = _groups.firstWhere((e) => e.id == _filterGroupId, orElse: () => Group(id: '', name: '', facultyId: ''));
-       filteredStudents = filteredStudents.where((s) => _matchesGroup(s, _filterGroupId, g.name)).toList();
+      final g = _groups.firstWhere((e) => e.id == _filterGroupId,
+          orElse: () => Group(id: '', name: '', facultyId: ''));
+      filteredStudents = filteredStudents
+          .where((s) => _matchesGroup(s, _filterGroupId, g.name))
+          .toList();
+    }
+
+    final studentQuery = _studentSearchQuery.trim().toLowerCase();
+    if (studentQuery.isNotEmpty) {
+      filteredStudents = filteredStudents.where((s) {
+        final fullName = s.fullName.toLowerCase();
+        final login = s.login.toLowerCase();
+        final faculty = _resolveFacultyName(s).toLowerCase();
+        final group = _resolveGroupName(s).toLowerCase();
+        return fullName.contains(studentQuery) ||
+            login.contains(studentQuery) ||
+            faculty.contains(studentQuery) ||
+            group.contains(studentQuery);
+      }).toList();
+      filteredStudents.sort((a, b) {
+        final aName = a.fullName.toLowerCase();
+        final bName = b.fullName.toLowerCase();
+        final aLogin = a.login.toLowerCase();
+        final bLogin = b.login.toLowerCase();
+
+        int rank(User u) {
+          final name = u.fullName.toLowerCase();
+          final login = u.login.toLowerCase();
+          if (name.startsWith(studentQuery)) return 0;
+          if (name.contains(studentQuery)) return 1;
+          if (login.startsWith(studentQuery)) return 2;
+          if (login.contains(studentQuery)) return 3;
+          return 9;
+        }
+
+        final r = rank(a).compareTo(rank(b));
+        if (r != 0) return r;
+        final n = aName.compareTo(bName);
+        if (n != 0) return n;
+        return aLogin.compareTo(bLogin);
+      });
     }
 
     final width = MediaQuery.sizeOf(context).width;
@@ -322,7 +459,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
           icon: Icons.people_outline,
           subtitle: "Список и фильтрация студентов по факультетам и группам",
         ),
-        
+
         // FILTERS
         SliverToBoxAdapter(
           child: Padding(
@@ -336,7 +473,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text("Фильтрация", style: TextStyle(fontWeight: FontWeight.bold)),
+                  const Text("Фильтрация",
+                      style: TextStyle(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
                     isExpanded: true,
@@ -346,10 +484,12 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                       prefixIcon: Icon(Icons.domain_outlined),
                     ),
                     items: [
-                      const DropdownMenuItem<String>(value: null, child: Text("Все факультеты")),
+                      const DropdownMenuItem<String>(
+                          value: null, child: Text("Все факультеты")),
                       ..._faculties.map((f) => DropdownMenuItem<String>(
                             value: f.id,
-                            child: Text(f.name, overflow: TextOverflow.ellipsis, maxLines: 1),
+                            child: Text(f.name,
+                                overflow: TextOverflow.ellipsis, maxLines: 1),
                           )),
                     ],
                     onChanged: (value) {
@@ -368,16 +508,30 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                       prefixIcon: Icon(Icons.groups_outlined),
                     ),
                     items: [
-                      const DropdownMenuItem<String>(value: null, child: Text("Все направления")),
+                      const DropdownMenuItem<String>(
+                          value: null, child: Text("Все направления")),
                       ...(_filterFacultyId == null
                               ? _groups
-                              : _groups.where((g) => g.facultyId == _filterFacultyId))
+                              : _groups.where(
+                                  (g) => g.facultyId == _filterFacultyId))
                           .map((g) => DropdownMenuItem<String>(
                                 value: g.id,
-                                child: Text(g.name, overflow: TextOverflow.ellipsis, maxLines: 1),
+                                child: Text(g.name,
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1),
                               )),
                     ],
-                    onChanged: (value) => setState(() => _filterGroupId = value),
+                    onChanged: (value) =>
+                        setState(() => _filterGroupId = value),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    onChanged: (value) =>
+                        setState(() => _studentSearchQuery = value),
+                    decoration: const InputDecoration(
+                      labelText: "Поиск студентов (ФИО / логин)",
+                      prefixIcon: Icon(Icons.search),
+                    ),
                   ),
                 ],
               ),
@@ -394,27 +548,29 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
           SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             sliver: isMobile
-              ? SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) => _buildStudentCard(filteredStudents[index]),
-                    childCount: filteredStudents.length,
-                  ),
-                )
-              : SliverGrid(
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                       crossAxisCount: crossAxisCount,
-                       mainAxisSpacing: 12,
-                       crossAxisSpacing: 12,
-                       mainAxisExtent: 220,
-                    ),
+                ? SliverList(
                     delegate: SliverChildBuilderDelegate(
-                      (context, index) => _buildStudentCard(filteredStudents[index]),
+                      (context, index) =>
+                          _buildStudentCard(filteredStudents[index]),
                       childCount: filteredStudents.length,
                     ),
-                ),
+                  )
+                : SliverGrid(
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: crossAxisCount,
+                      mainAxisSpacing: 12,
+                      crossAxisSpacing: 12,
+                      mainAxisExtent: 220,
+                    ),
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) =>
+                          _buildStudentCard(filteredStudents[index]),
+                      childCount: filteredStudents.length,
+                    ),
+                  ),
           ),
-          
-          const SliverPadding(padding: EdgeInsets.only(bottom: 80)),
+
+        const SliverPadding(padding: EdgeInsets.only(bottom: 80)),
       ],
     );
   }
@@ -437,20 +593,16 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(
-                    s.fullName, 
-                    maxLines: 1, 
-                    overflow: TextOverflow.ellipsis, 
-                    style: Theme.of(context).textTheme.titleMedium
-                  ),
+                  Text(s.fullName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: 4),
-                  Text(
-                    "${_resolveFacultyName(s)} / ${_resolveGroupName(s)}",
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      fontSize: Theme.of(context).textTheme.bodySmall?.fontSize
-                    )
-                  ),
+                  Text("${_resolveFacultyName(s)} / ${_resolveGroupName(s)}",
+                      style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          fontSize:
+                              Theme.of(context).textTheme.bodySmall?.fontSize)),
                 ],
               ),
             ),
@@ -462,27 +614,35 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
 
   // --- TAB 2: Grade Journal ---
   Widget _buildGradeJournalTab() {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final selectedTabColor =
+        isDark ? const Color(0xFF4DA3FF) : theme.colorScheme.primary;
+    final unselectedTabColor = isDark
+        ? theme.colorScheme.onSurface.withOpacity(0.78)
+        : theme.colorScheme.onSurfaceVariant;
     return DefaultTabController(
       length: 2,
       child: NestedScrollView(
         headerSliverBuilder: (context, innerBoxIsScrolled) => [
-           _buildSliverAppBar(
-             "Журнал оценок",
-             icon: Icons.grade_outlined,
-             subtitle: "Выставление баллов и просмотр истории",
-           ),
-           SliverToBoxAdapter(
-             child: TabBar(
-                labelColor: Theme.of(context).colorScheme.primary,
-                unselectedLabelColor: Theme.of(context).colorScheme.onSurfaceVariant,
-                indicatorSize: TabBarIndicatorSize.tab,
-                dividerColor: Colors.transparent,
-                tabs: const [
-                  Tab(text: "Новая оценка"),
-                  Tab(text: "История"),
-                ],
-             ),
-           ),
+          _buildSliverAppBar(
+            "Журнал оценок",
+            icon: Icons.grade_outlined,
+            subtitle: "Выставление баллов и просмотр истории",
+          ),
+          SliverToBoxAdapter(
+            child: TabBar(
+              indicatorColor: selectedTabColor,
+              labelColor: selectedTabColor,
+              unselectedLabelColor: unselectedTabColor,
+              indicatorSize: TabBarIndicatorSize.tab,
+              dividerColor: Colors.transparent,
+              tabs: const [
+                Tab(text: "Новая оценка"),
+                Tab(text: "История"),
+              ],
+            ),
+          ),
         ],
         body: TabBarView(
           children: [
@@ -495,8 +655,11 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   }
 
   Widget _buildNewGradeForm() {
-    if (_students.isEmpty) return const Center(child: Text("Нет студентов для оценки"));
-    if (_norms.isEmpty) return const Center(child: Text("Сначала создайте нормативы во вкладке 'Нормативы'"));
+    if (_students.isEmpty)
+      return const Center(child: Text("Нет студентов для оценки"));
+    if (_norms.isEmpty)
+      return const Center(
+          child: Text("Сначала создайте нормативы во вкладке 'Нормативы'"));
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -508,8 +671,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: _GradeForm(
-              students: _students, 
-              norms: _norms, 
+              students: _students,
+              norms: _norms,
               faculties: _faculties,
               groups: _groups,
               teacherId: widget.user.id,
@@ -522,56 +685,122 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   }
 
   Widget _buildGradesHistory() {
-    final myGrades = _grades.where((g) => g.teacherId == widget.user.id).toList();
+    final myGrades =
+        _grades.where((g) => g.teacherId == widget.user.id).toList();
     final studentsById = {for (final s in _students) s.id: s};
     final normsById = {for (final n in _norms) n.id: n};
 
     final selectedFacultyName = _historyFilterFacultyId == null
         ? null
-        : _faculties.firstWhere((f) => f.id == _historyFilterFacultyId, orElse: () => Faculty(id: '', name: '')).name;
+        : _faculties
+            .firstWhere((f) => f.id == _historyFilterFacultyId,
+                orElse: () => Faculty(id: '', name: ''))
+            .name;
 
     final selectedGroupName = _historyFilterGroupId == null
         ? null
-        : _groups.firstWhere((g) => g.id == _historyFilterGroupId, orElse: () => Group(id: '', name: '', facultyId: '')).name;
+        : _groups
+            .firstWhere((g) => g.id == _historyFilterGroupId,
+                orElse: () => Group(id: '', name: '', facultyId: ''))
+            .name;
 
     final studentsForDropdown = _students.where((s) {
-      if (!_matchesFaculty(s, _historyFilterFacultyId, selectedFacultyName)) return false;
-      if (!_matchesGroup(s, _historyFilterGroupId, selectedGroupName)) return false;
+      if (!_matchesFaculty(s, _historyFilterFacultyId, selectedFacultyName))
+        return false;
+      if (!_matchesGroup(s, _historyFilterGroupId, selectedGroupName))
+        return false;
       return true;
     }).toList();
 
     final filteredGrades = myGrades.where((g) {
-      if (_historyFilterStudentId != null && g.studentId != _historyFilterStudentId) return false;
-      if (_historyFilterNormId != null && g.normId != _historyFilterNormId) return false;
+      if (_historyFilterStudentId != null &&
+          g.studentId != _historyFilterStudentId) return false;
+      if (_historyFilterNormId != null && g.normId != _historyFilterNormId)
+        return false;
+      if (_historyFilterAcademicYear != null &&
+          (g.academicYear.isEmpty ? _defaultAcademicYear() : g.academicYear) !=
+              _historyFilterAcademicYear) {
+        return false;
+      }
+      if (_historyFilterCourse != null && g.course != _historyFilterCourse)
+        return false;
+      if (_historyFilterSemester != null &&
+          g.semester != _historyFilterSemester) return false;
+      if (_journalVisibleFrom != null && g.date.isBefore(_journalVisibleFrom!))
+        return false;
 
       final student = studentsById[g.studentId];
       if (student == null) return false;
-      if (!_matchesFaculty(student, _historyFilterFacultyId, selectedFacultyName)) return false;
-      if (!_matchesGroup(student, _historyFilterGroupId, selectedGroupName)) return false;
+      if (!_matchesFaculty(
+          student, _historyFilterFacultyId, selectedFacultyName)) return false;
+      if (!_matchesGroup(student, _historyFilterGroupId, selectedGroupName))
+        return false;
+
+      final query = _historySearchQuery.trim().toLowerCase();
+      if (query.isNotEmpty) {
+        final studentName = (student.fullName).toLowerCase();
+        final studentLogin = student.login.toLowerCase();
+        final normName = (normsById[g.normId]?.name ?? '').toLowerCase();
+        final comment = (g.comment ?? '').toLowerCase();
+        final haystack = '$studentName $studentLogin $normName $comment';
+        if (!haystack.contains(query)) return false;
+      }
       return true;
     }).toList();
 
-    if (myGrades.isEmpty) return const Center(child: Text("Вы еще не ставили оценок"));
+    final query = _historySearchQuery.trim().toLowerCase();
+    if (query.isNotEmpty) {
+      int rank(Grade g) {
+        final student = studentsById[g.studentId];
+        if (student == null) return 9;
+        final name = student.fullName.toLowerCase();
+        final login = student.login.toLowerCase();
+        final norm = (normsById[g.normId]?.name ?? '').toLowerCase();
+        final comment = (g.comment ?? '').toLowerCase();
+        if (name.startsWith(query)) return 0;
+        if (name.contains(query)) return 1;
+        if (login.startsWith(query)) return 2;
+        if (login.contains(query)) return 3;
+        if (norm.contains(query)) return 4;
+        if (comment.contains(query)) return 5;
+        return 9;
+      }
+
+      filteredGrades.sort((a, b) {
+        final r = rank(a).compareTo(rank(b));
+        if (r != 0) return r;
+        return b.date.compareTo(a.date);
+      });
+    } else {
+      filteredGrades.sort((a, b) => b.date.compareTo(a.date));
+    }
+    final displayItems = _buildGradeDisplayItems(filteredGrades);
+
+    if (myGrades.isEmpty)
+      return const Center(child: Text("Вы еще не ставили оценок"));
 
     return CustomScrollView(
       slivers: [
-         SliverToBoxAdapter(
-           child: Padding(
-             padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-             child: Container(
-               padding: const EdgeInsets.all(16),
-               decoration: BoxDecoration(
-                 color: Theme.of(context).colorScheme.surfaceContainer,
-                 borderRadius: BorderRadius.circular(16),
-               ),
-               child: Column(
-                 children: [
-                   DropdownButtonFormField<String>(
-                     isExpanded: true,
-                     value: _historyFilterFacultyId,
-                     decoration: const InputDecoration(labelText: "Факультет", prefixIcon: Icon(Icons.domain_outlined)),
-                     items: [
-                       const DropdownMenuItem<String>(value: null, child: Text("Все факультеты")),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainer,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                children: [
+                  DropdownButtonFormField<String>(
+                    isExpanded: true,
+                    value: _historyFilterFacultyId,
+                    decoration: const InputDecoration(
+                        labelText: "Факультет",
+                        prefixIcon: Icon(Icons.domain_outlined)),
+                    items: [
+                      const DropdownMenuItem<String>(
+                          value: null, child: Text("Все факультеты")),
                       ..._faculties.map(
                         (f) => DropdownMenuItem<String>(
                           value: f.id,
@@ -582,46 +811,53 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                           ),
                         ),
                       ),
-                     ],
-                     onChanged: (value) => setState(() {
-                         _historyFilterFacultyId = value;
-                         _historyFilterGroupId = null;
-                         _historyFilterStudentId = null;
-                     }),
-                   ),
-                   const SizedBox(height: 12),
-                   DropdownButtonFormField<String>(
-                     isExpanded: true,
-                     value: _historyFilterGroupId,
-                     decoration: const InputDecoration(labelText: "Направление / группа", prefixIcon: Icon(Icons.groups_outlined)),
-                     items: [
-                       const DropdownMenuItem<String>(value: null, child: Text("Все направления")),
+                    ],
+                    onChanged: (value) => setState(() {
+                      _historyFilterFacultyId = value;
+                      _historyFilterGroupId = null;
+                      _historyFilterStudentId = null;
+                    }),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    isExpanded: true,
+                    value: _historyFilterGroupId,
+                    decoration: const InputDecoration(
+                        labelText: "Направление / группа",
+                        prefixIcon: Icon(Icons.groups_outlined)),
+                    items: [
+                      const DropdownMenuItem<String>(
+                          value: null, child: Text("Все направления")),
                       ...(_historyFilterFacultyId == null
                               ? _groups
-                              : _groups.where((g) => g.facultyId == _historyFilterFacultyId))
+                              : _groups.where((g) =>
+                                  g.facultyId == _historyFilterFacultyId))
                           .map(
-                            (g) => DropdownMenuItem<String>(
-                              value: g.id,
-                              child: Text(
-                                g.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
+                        (g) => DropdownMenuItem<String>(
+                          value: g.id,
+                          child: Text(
+                            g.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                     ],
-                     onChanged: (value) => setState(() {
-                         _historyFilterGroupId = value;
-                         _historyFilterStudentId = null;
-                     }),
-                   ),
-                   const SizedBox(height: 12),
-                   DropdownButtonFormField<String>(
-                     isExpanded: true,
-                     value: _historyFilterStudentId,
-                     decoration: const InputDecoration(labelText: "Студент", prefixIcon: Icon(Icons.person_outline)),
-                     items: [
-                       const DropdownMenuItem<String>(value: null, child: Text("Все студенты")),
+                        ),
+                      ),
+                    ],
+                    onChanged: (value) => setState(() {
+                      _historyFilterGroupId = value;
+                      _historyFilterStudentId = null;
+                    }),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    isExpanded: true,
+                    value: _historyFilterStudentId,
+                    decoration: const InputDecoration(
+                        labelText: "Студент",
+                        prefixIcon: Icon(Icons.person_outline)),
+                    items: [
+                      const DropdownMenuItem<String>(
+                          value: null, child: Text("Все студенты")),
                       ...studentsForDropdown.map(
                         (s) => DropdownMenuItem<String>(
                           value: s.id,
@@ -632,16 +868,20 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                           ),
                         ),
                       ),
-                     ],
-                     onChanged: (value) => setState(() => _historyFilterStudentId = value),
-                   ),
-                   const SizedBox(height: 12),
-                   DropdownButtonFormField<String>(
-                     isExpanded: true,
-                     value: _historyFilterNormId,
-                     decoration: const InputDecoration(labelText: "Норматив", prefixIcon: Icon(Icons.rule_outlined)),
-                     items: [
-                       const DropdownMenuItem<String>(value: null, child: Text("Все нормативы")),
+                    ],
+                    onChanged: (value) =>
+                        setState(() => _historyFilterStudentId = value),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    isExpanded: true,
+                    value: _historyFilterNormId,
+                    decoration: const InputDecoration(
+                        labelText: "Норматив",
+                        prefixIcon: Icon(Icons.rule_outlined)),
+                    items: [
+                      const DropdownMenuItem<String>(
+                          value: null, child: Text("Все нормативы")),
                       ..._norms.map(
                         (n) => DropdownMenuItem<String>(
                           value: n.id,
@@ -652,92 +892,222 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                           ),
                         ),
                       ),
-                     ],
-                     onChanged: (value) => setState(() => _historyFilterNormId = value),
-                   ),
-                 ],
-               ),
-             ),
-           ),
-         ),
-         SliverPadding(
-            padding: const EdgeInsets.all(16),
-            sliver: filteredGrades.isEmpty
-                ? SliverToBoxAdapter(
-                    child: SizedBox(
-                      height: 240,
-                      child: Center(child: Text("По выбранным фильтрам ничего не найдено", style: Theme.of(context).textTheme.bodyMedium)),
-                    ),
-                  )
-                : SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  final g = filteredGrades[index];
-                  final bool isEdited = g.history.isNotEmpty;
-                  final theme = Theme.of(context);
-                  
-                  final studentName = studentsById[g.studentId]?.fullName ?? 'Неизвестный студент';
-                  final normName = normsById[g.normId]?.name ?? 'Неизвестный норматив';
-
-                  return Card(
-                    elevation: 0,
-                    margin: const EdgeInsets.only(bottom: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: theme.colorScheme.outlineVariant.withOpacity(0.5))),
-                    child: Theme(
-                      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-                      child: ExpansionTile(
-                        leading: _getScoreIcon(g.score),
-                        title: Text(studentName, style: const TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Text("$normName — ${g.date.toString().split(' ')[0]}"),
-                        trailing: Container(
-                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                           decoration: BoxDecoration(color: _getScoreColor(g.score).withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
-                           child: Text("${g.score}", style: TextStyle(fontWeight: FontWeight.bold, color: _getScoreColor(g.score), fontSize: Theme.of(context).textTheme.titleMedium?.fontSize)),
+                    ],
+                    onChanged: (value) =>
+                        setState(() => _historyFilterNormId = value),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    isExpanded: true,
+                    value: _historyFilterAcademicYear,
+                    decoration: const InputDecoration(
+                        labelText: "Учебный год",
+                        prefixIcon: Icon(Icons.calendar_today_outlined)),
+                    items: [
+                      const DropdownMenuItem<String>(
+                          value: null, child: Text("Все учебные годы")),
+                      ..._academicYearOptions().map(
+                        (y) => DropdownMenuItem<String>(
+                          value: y,
+                          child: Text(y),
                         ),
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.all(16.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                if (g.comment != null && g.comment!.isNotEmpty)
-                                   Container(
-                                     padding: const EdgeInsets.all(12),
-                                     decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(12)),
-                                     child: Text(g.comment!),
-                                   ),
-                                
-                                if (isEdited) ...[
-                                  const SizedBox(height: 16),
-                                  Text("История изменений:", style: TextStyle(fontWeight: FontWeight.bold, color: theme.colorScheme.onSurfaceVariant)),
-                                  const SizedBox(height: 8),
-                                  ...g.history.reversed.map((h) {
-                                     final int hScore = h['score'];
-                                     final String hDate = DateTime.parse(h['date']).toString().split(' ')[0];
-                                     return Padding(
-                                       padding: const EdgeInsets.only(bottom: 4.0),
-                                       child: Row(
-                                         children: [
-                                           Icon(Icons.history, size: 14, color: theme.colorScheme.outline),
-                                           const SizedBox(width: 8),
-                                           Text("Был балл: $hScore ($hDate)", style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: theme.textTheme.bodySmall?.fontSize)),
-                                         ],
-                                       ),
-                                     );
-                                  }).toList(),
-                                ]
-                              ],
-                            ),
-                          ),
-                        ],
                       ),
+                    ],
+                    onChanged: (value) =>
+                        setState(() => _historyFilterAcademicYear = value),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<int>(
+                    isExpanded: true,
+                    value: _historyFilterCourse,
+                    decoration: const InputDecoration(
+                        labelText: "Курс",
+                        prefixIcon: Icon(Icons.school_outlined)),
+                    items: const [
+                      DropdownMenuItem<int>(
+                          value: null, child: Text("Все курсы")),
+                      DropdownMenuItem<int>(value: 1, child: Text("1 курс")),
+                      DropdownMenuItem<int>(value: 2, child: Text("2 курс")),
+                      DropdownMenuItem<int>(value: 3, child: Text("3 курс")),
+                      DropdownMenuItem<int>(value: 4, child: Text("4 курс")),
+                      DropdownMenuItem<int>(value: 5, child: Text("5 курс")),
+                      DropdownMenuItem<int>(value: 6, child: Text("6 курс")),
+                    ],
+                    onChanged: (value) =>
+                        setState(() => _historyFilterCourse = value),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<int>(
+                    isExpanded: true,
+                    value: _historyFilterSemester,
+                    decoration: const InputDecoration(
+                        labelText: "Семестр",
+                        prefixIcon: Icon(Icons.event_note_outlined)),
+                    items: const [
+                      DropdownMenuItem<int>(
+                          value: null, child: Text("Все семестры")),
+                      DropdownMenuItem<int>(value: 1, child: Text("1 семестр")),
+                      DropdownMenuItem<int>(value: 2, child: Text("2 семестр")),
+                    ],
+                    onChanged: (value) =>
+                        setState(() => _historyFilterSemester = value),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    onChanged: (value) =>
+                        setState(() => _historySearchQuery = value),
+                    decoration: const InputDecoration(
+                      labelText: "Поиск (в приоритете студенты)",
+                      prefixIcon: Icon(Icons.search),
                     ),
-                  );
-                },
-                childCount: filteredGrades.length,
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _journalVisibleFrom == null
+                              ? _clearJournalVisualOnly
+                              : _resetJournalVisibility,
+                          icon: Icon(
+                            _journalVisibleFrom == null
+                                ? Icons.cleaning_services_outlined
+                                : Icons.restore_outlined,
+                          ),
+                          label: Text(
+                            _journalVisibleFrom == null
+                                ? "Очистить журнал (визуально)"
+                                : "Показать весь журнал",
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_journalVisibleFrom != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      "Показываются записи с ${_journalVisibleFrom!.toString().split(' ')[0]}",
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                    ),
+                  ],
+                ],
               ),
             ),
-         ),
+          ),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.all(16),
+          sliver: displayItems.isEmpty
+              ? SliverToBoxAdapter(
+                  child: SizedBox(
+                    height: 240,
+                    child: Center(
+                        child: Text("По выбранным фильтрам ничего не найдено",
+                            style: Theme.of(context).textTheme.bodyMedium)),
+                  ),
+                )
+              : SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      final item = displayItems[index];
+                      final g = item.current;
+                      final bool isEdited = item.historyEntries.isNotEmpty;
+                      final theme = Theme.of(context);
+
+                      final studentName = studentsById[g.studentId]?.fullName ??
+                          'Неизвестный студент';
+                      final normName =
+                          normsById[g.normId]?.name ?? 'Неизвестный норматив';
+
+                      return Card(
+                        elevation: 0,
+                        margin: const EdgeInsets.only(bottom: 12),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            side: BorderSide(
+                                color: theme.colorScheme.outlineVariant
+                                    .withOpacity(0.5))),
+                        child: Theme(
+                          data: Theme.of(context)
+                              .copyWith(dividerColor: Colors.transparent),
+                          child: ExpansionTile(
+                            leading: _getScoreIcon(g.score),
+                            title: Text(studentName,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold)),
+                            subtitle: Text(
+                              "$normName • ${(g.academicYear.isEmpty ? _defaultAcademicYear() : g.academicYear)} • ${g.course} курс / ${g.semester} семестр — ${g.date.toString().split(' ')[0]}",
+                            ),
+                            trailing: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
+                                  color:
+                                      _getScoreColor(g.score).withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(20)),
+                              child: Text("${g.score}",
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: _getScoreColor(g.score),
+                                      fontSize: Theme.of(context)
+                                          .textTheme
+                                          .titleMedium
+                                          ?.fontSize)),
+                            ),
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.all(16.0),
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    ..._buildScoreSummaryChips(
+                                      currentScore: g.score,
+                                      entries: item.historyEntries,
+                                      theme: theme,
+                                    ),
+                                    if (item.historyEntries.isNotEmpty)
+                                      const SizedBox(height: 12),
+                                    if (g.comment != null &&
+                                        g.comment!.isNotEmpty)
+                                      Container(
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: BoxDecoration(
+                                            color: theme.colorScheme
+                                                .surfaceContainerHighest,
+                                            borderRadius:
+                                                BorderRadius.circular(12)),
+                                        child: Text(g.comment!),
+                                      ),
+                                    if (isEdited) ...[
+                                      const SizedBox(height: 16),
+                                      Text("История изменений:",
+                                          style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              color: theme.colorScheme
+                                                  .onSurfaceVariant)),
+                                      const SizedBox(height: 8),
+                                      ..._buildHistoryTimeline(
+                                        currentScore: g.score,
+                                        entries: item.historyEntries,
+                                        theme: theme,
+                                      ),
+                                    ]
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                    childCount: displayItems.length,
+                  ),
+                ),
+        ),
       ],
     );
   }
@@ -749,9 +1119,194 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   }
 
   Icon _getScoreIcon(int score) {
-    if (score >= 4) return const Icon(Icons.sentiment_satisfied_alt, color: Colors.green);
-    if (score == 3) return const Icon(Icons.sentiment_neutral, color: Colors.orange);
+    if (score >= 4)
+      return const Icon(Icons.sentiment_satisfied_alt, color: Colors.green);
+    if (score == 3)
+      return const Icon(Icons.sentiment_neutral, color: Colors.orange);
     return const Icon(Icons.sentiment_dissatisfied, color: Colors.red);
+  }
+
+  List<_HistoryEntry> _normalizeHistoryEntries(Grade grade) {
+    final entries = <_HistoryEntry>[];
+    for (final raw in grade.history) {
+      final scoreRaw = raw['score'];
+      final dateRaw = raw['date'];
+      final parsedScore = scoreRaw is num
+          ? scoreRaw.toInt()
+          : int.tryParse(scoreRaw?.toString() ?? '');
+      final parsed = DateTime.tryParse(dateRaw?.toString() ?? '');
+      if (parsedScore == null || parsed == null) continue;
+      // Skip pseudo-history points equal to current grade state at same timestamp.
+      final sameScore = parsedScore == grade.score;
+      final sameMoment = parsed.toUtc().toIso8601String() ==
+          grade.date.toUtc().toIso8601String();
+      if (sameScore && sameMoment) continue;
+      entries.add(_HistoryEntry(score: parsedScore, date: parsed));
+    }
+
+    return _dedupeAndSortHistory(entries);
+  }
+
+  List<_GradeDisplayItem> _buildGradeDisplayItems(List<Grade> grades) {
+    final grouped = <String, List<Grade>>{};
+    for (final g in grades) {
+      final key =
+          '${g.studentId}_${g.normId}_${g.academicYear}_${g.course}_${g.semester}';
+      grouped.putIfAbsent(key, () => <Grade>[]).add(g);
+    }
+
+    final result = <_GradeDisplayItem>[];
+    for (final bucket in grouped.values) {
+      bucket.sort((a, b) => b.date.compareTo(a.date));
+      final current = bucket.first;
+      final history = <_HistoryEntry>[
+        ..._normalizeHistoryEntries(current),
+        ...bucket
+            .skip(1)
+            .map((old) => _HistoryEntry(score: old.score, date: old.date)),
+      ];
+
+      result.add(
+        _GradeDisplayItem(
+          current: current,
+          historyEntries: _dedupeAndSortHistory(history),
+        ),
+      );
+    }
+
+    result.sort((a, b) => b.current.date.compareTo(a.current.date));
+    return result;
+  }
+
+  List<_HistoryEntry> _dedupeAndSortHistory(List<_HistoryEntry> entries) {
+    final unique = <String, _HistoryEntry>{};
+    for (final e in entries) {
+      unique['${e.score}_${e.date.toUtc().toIso8601String()}'] = e;
+    }
+    final result = unique.values.toList()
+      ..sort((a, b) => b.date.compareTo(a.date));
+    return result;
+  }
+
+  List<Widget> _buildHistoryTimeline({
+    required int currentScore,
+    required List<_HistoryEntry> entries,
+    required ThemeData theme,
+  }) {
+    final widgets = <Widget>[];
+    var newerScore = currentScore;
+
+    for (var i = 0; i < entries.length; i++) {
+      final entry = entries[i];
+      final delta = newerScore - entry.score;
+      final isUp = delta > 0;
+      final isDown = delta < 0;
+      final Color accent = isUp
+          ? Colors.green
+          : (isDown ? Colors.red : theme.colorScheme.outline);
+      final IconData trendIcon = isUp
+          ? Icons.trending_up
+          : (isDown ? Icons.trending_down : Icons.trending_flat);
+
+      widgets.add(
+        Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: accent.withOpacity(0.08),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: accent.withOpacity(0.35)),
+          ),
+          child: Row(
+            children: [
+              Icon(trendIcon, size: 16, color: accent),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  "Был балл: ${entry.score} (${entry.date.toString().split(' ')[0]})",
+                  style: TextStyle(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    fontSize: theme.textTheme.bodySmall?.fontSize,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      newerScore = entry.score;
+    }
+
+    return widgets;
+  }
+
+  List<Widget> _buildScoreSummaryChips({
+    required int currentScore,
+    required List<_HistoryEntry> entries,
+    required ThemeData theme,
+  }) {
+    final chips = <Widget>[
+      _summaryChip(
+        label: "Текущий балл: $currentScore",
+        fg: _getScoreColor(currentScore),
+        bg: _getScoreColor(currentScore).withOpacity(0.12),
+      ),
+    ];
+
+    if (entries.isNotEmpty) {
+      final latestPrevious = entries
+          .firstWhere(
+            (e) => e.score != currentScore,
+            orElse: () => entries.first,
+          )
+          .score;
+      final delta = currentScore - latestPrevious;
+      final deltaText = delta > 0
+          ? "Изменение: +$delta"
+          : (delta < 0 ? "Изменение: $delta" : "Изменение: 0");
+      final deltaColor = delta > 0
+          ? Colors.green
+          : (delta < 0 ? Colors.red : theme.colorScheme.outline);
+      chips.add(
+        _summaryChip(
+          label: deltaText,
+          fg: deltaColor,
+          bg: deltaColor.withOpacity(0.12),
+        ),
+      );
+    }
+
+    return [
+      Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: chips,
+      ),
+    ];
+  }
+
+  Widget _summaryChip({
+    required String label,
+    required Color fg,
+    required Color bg,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: fg.withOpacity(0.35)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: fg,
+          fontWeight: FontWeight.w700,
+          fontSize: 12,
+        ),
+      ),
+    );
   }
 
   // --- TAB 3: Norms Management ---
@@ -763,9 +1318,9 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
           icon: Icons.rule_outlined,
           subtitle: "Актуальный перечень нормативов для оценки",
         ),
-        if (_norms.isEmpty) 
-           const SliverFillRemaining(child: Center(child: Text("Список нормативов пуст"))),
-        
+        if (_norms.isEmpty)
+          const SliverFillRemaining(
+              child: Center(child: Text("Список нормативов пуст"))),
         SliverPadding(
           padding: const EdgeInsets.all(16),
           sliver: SliverList(
@@ -776,17 +1331,23 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                   child: ListTile(
                     leading: Container(
                       padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(color: Theme.of(context).colorScheme.primaryContainer, shape: BoxShape.circle),
-                      child: Icon(Icons.fitness_center, color: Theme.of(context).colorScheme.onPrimaryContainer, size: 20),
+                      decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.primaryContainer,
+                          shape: BoxShape.circle),
+                      child: Icon(Icons.fitness_center,
+                          color:
+                              Theme.of(context).colorScheme.onPrimaryContainer,
+                          size: 20),
                     ),
-                    title: Text(n.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                    title: Text(n.name,
+                        style: const TextStyle(fontWeight: FontWeight.w600)),
                     trailing: IconButton(
                       icon: const Icon(Icons.delete_outline, color: Colors.red),
                       onPressed: () async {
-                         final shouldDelete = await _confirmDeleteNorm(n.name);
-                         if (!shouldDelete) return;
-                         await _api.deleteNorm(n.id);
-                         _loadData();
+                        final shouldDelete = await _confirmDeleteNorm(n.name);
+                        if (!shouldDelete) return;
+                        await _api.deleteNorm(n.id);
+                        _loadData();
                       },
                     ),
                   ),
@@ -810,8 +1371,13 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
         title: const Text('Подтверждение удаления'),
         content: Text('Вы точно хотите удалить норматив "$normName"?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), style: FilledButton.styleFrom(backgroundColor: Colors.red), child: const Text('Удалить')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Отмена')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: FilledButton.styleFrom(backgroundColor: Colors.red),
+              child: const Text('Удалить')),
         ],
       ),
     );
@@ -830,25 +1396,47 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
           child: TextFormField(
             controller: controller,
             decoration: const InputDecoration(labelText: "Название"),
-            validator: (v) => v == null || v.isEmpty ? 'Введите название' : null,
+            validator: (v) =>
+                v == null || v.isEmpty ? 'Введите название' : null,
           ),
         ),
         actions: [
-           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Отмена")),
-           ElevatedButton(
-             onPressed: () async {
-               if (formKey.currentState!.validate()) {
-                 await _api.createNorm(controller.text.trim());
-                 _loadData();
-                 if (mounted) Navigator.pop(ctx);
-               }
-             },
-             child: const Text("Создать"),
-           ),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text("Отмена")),
+          ElevatedButton(
+            onPressed: () async {
+              if (formKey.currentState!.validate()) {
+                await _api.createNorm(controller.text.trim());
+                _loadData();
+                if (mounted) Navigator.pop(ctx);
+              }
+            },
+            child: const Text("Создать"),
+          ),
         ],
       ),
     );
   }
+}
+
+class _HistoryEntry {
+  final int score;
+  final DateTime date;
+
+  const _HistoryEntry({
+    required this.score,
+    required this.date,
+  });
+}
+
+class _GradeDisplayItem {
+  final Grade current;
+  final List<_HistoryEntry> historyEntries;
+
+  const _GradeDisplayItem({
+    required this.current,
+    required this.historyEntries,
+  });
 }
 
 class _GradeForm extends StatefulWidget {
@@ -860,8 +1448,8 @@ class _GradeForm extends StatefulWidget {
   final VoidCallback onGradeAdded;
 
   const _GradeForm({
-    required this.students, 
-    required this.norms, 
+    required this.students,
+    required this.norms,
     required this.faculties,
     required this.groups,
     required this.teacherId,
@@ -877,31 +1465,210 @@ class _GradeFormState extends State<_GradeForm> {
   String? _selectedGroupId;
   String? _selectedStudentId;
   String? _selectedNormId;
+  late String _selectedAcademicYear;
+  final List<String> _customAcademicYears = <String>[];
+  int _selectedCourse = 1;
+  int _selectedSemester = 1;
   int _score = 5;
   final _commentController = TextEditingController();
+
+  String _defaultAcademicYear() {
+    final now = DateTime.now();
+    final startYear = now.month >= 9 ? now.year : now.year - 1;
+    return '$startYear/${startYear + 1}';
+  }
+
+  List<String> _academicYearOptions() {
+    final now = DateTime.now();
+    final currentStartYear = now.month >= 9 ? now.year : now.year - 1;
+    final years = <String>{
+      ...List<String>.generate(6, (i) {
+        final start = currentStartYear - 2 + i;
+        return '$start/${start + 1}';
+      }),
+      ..._customAcademicYears,
+    }.toList();
+    years.sort((a, b) => b.compareTo(a));
+    return years;
+  }
+
+  String get _customYearsStorageKey =>
+      'teacher_custom_academic_years_${widget.teacherId}';
+
+  Future<void> _loadCustomAcademicYears() async {
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getStringList(_customYearsStorageKey) ?? const [];
+    if (!mounted) return;
+    setState(() {
+      _customAcademicYears
+        ..clear()
+        ..addAll(stored.where(_isValidAcademicYear));
+      final options = _academicYearOptions();
+      if (!options.contains(_selectedAcademicYear)) {
+        _selectedAcademicYear = _defaultAcademicYear();
+      }
+    });
+  }
+
+  Future<void> _saveCustomAcademicYears() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_customYearsStorageKey, _customAcademicYears);
+  }
+
+  bool _isValidAcademicYear(String value) {
+    final match = RegExp(r'^(\d{4})/(\d{4})$').firstMatch(value);
+    if (match == null) return false;
+    final start = int.tryParse(match.group(1)!);
+    final end = int.tryParse(match.group(2)!);
+    if (start == null || end == null) return false;
+    return end == start + 1;
+  }
+
+  Future<void> _addAcademicYear() async {
+    final controller = TextEditingController(text: _defaultAcademicYear());
+    final result = await showDialog<String?>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Добавить учебный год"),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            hintText: "Например: 2027/2028",
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Отмена"),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text("Добавить"),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || result == null) return;
+    if (!_isValidAcademicYear(result)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Формат: YYYY/YYYY+1, например 2027/2028"),
+        ),
+      );
+      return;
+    }
+    setState(() {
+      if (!_customAcademicYears.contains(result)) {
+        _customAcademicYears.add(result);
+      }
+      _selectedAcademicYear = result;
+    });
+    await _saveCustomAcademicYears();
+  }
+
+  Future<void> _removeAcademicYear(String year) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Удалить учебный год?"),
+        content: Text("Удалить из пользовательского списка: $year"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text("Отмена"),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text("Удалить"),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true) return;
+    setState(() {
+      _customAcademicYears.remove(year);
+      if (_selectedAcademicYear == year) {
+        _selectedAcademicYear = _defaultAcademicYear();
+      }
+    });
+    await _saveCustomAcademicYears();
+  }
+
+  Future<void> _manageAcademicYears() async {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Пользовательские учебные годы"),
+        content: SizedBox(
+          width: 420,
+          child: _customAcademicYears.isEmpty
+              ? const Text("Список пуст. Добавьте год через кнопку +")
+              : ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: _customAcademicYears.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final year = _customAcademicYears[index];
+                    return ListTile(
+                      dense: true,
+                      title: Text(year),
+                      trailing: IconButton(
+                        tooltip: "Удалить",
+                        icon: const Icon(Icons.delete_outline),
+                        onPressed: () async {
+                          Navigator.pop(ctx);
+                          await _removeAcademicYear(year);
+                        },
+                      ),
+                    );
+                  },
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Закрыть"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedAcademicYear = _defaultAcademicYear();
+    _loadCustomAcademicYears();
+  }
 
   @override
   Widget build(BuildContext context) {
     final selectedFacultyName = _selectedFacultyId == null
         ? null
         : widget.faculties
-            .firstWhere((f) => f.id == _selectedFacultyId, orElse: () => Faculty(id: '', name: ''))
+            .firstWhere((f) => f.id == _selectedFacultyId,
+                orElse: () => Faculty(id: '', name: ''))
             .name;
     final selectedGroupName = _selectedGroupId == null
         ? null
         : widget.groups
-            .firstWhere((g) => g.id == _selectedGroupId, orElse: () => Group(id: '', name: '', facultyId: ''))
+            .firstWhere((g) => g.id == _selectedGroupId,
+                orElse: () => Group(id: '', name: '', facultyId: ''))
             .name;
 
     final filteredStudents = widget.students.where((s) {
       final facultyMatched = _selectedFacultyId == null
           ? true
           : ((s.facultyId != null && s.facultyId == _selectedFacultyId) ||
-              (selectedFacultyName != null && selectedFacultyName.isNotEmpty && s.faculty == selectedFacultyName));
+              (selectedFacultyName != null &&
+                  selectedFacultyName.isNotEmpty &&
+                  s.faculty == selectedFacultyName));
       final groupMatched = _selectedGroupId == null
           ? true
           : ((s.groupId != null && s.groupId == _selectedGroupId) ||
-              (selectedGroupName != null && selectedGroupName.isNotEmpty && s.group == selectedGroupName));
+              (selectedGroupName != null &&
+                  selectedGroupName.isNotEmpty &&
+                  s.group == selectedGroupName));
       if (!facultyMatched) return false;
       if (!groupMatched) return false;
       return true;
@@ -909,7 +1676,9 @@ class _GradeFormState extends State<_GradeForm> {
 
     final groupsForFaculty = _selectedFacultyId == null
         ? widget.groups
-        : widget.groups.where((g) => g.facultyId == _selectedFacultyId).toList();
+        : widget.groups
+            .where((g) => g.facultyId == _selectedFacultyId)
+            .toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -917,9 +1686,11 @@ class _GradeFormState extends State<_GradeForm> {
         DropdownButtonFormField<String>(
           isExpanded: true,
           value: _selectedFacultyId,
-          decoration: const InputDecoration(labelText: "Факультет", prefixIcon: Icon(Icons.domain_outlined)),
+          decoration: const InputDecoration(
+              labelText: "Факультет", prefixIcon: Icon(Icons.domain_outlined)),
           items: [
-            const DropdownMenuItem<String>(value: null, child: Text("Все факультеты")),
+            const DropdownMenuItem<String>(
+                value: null, child: Text("Все факультеты")),
             ...widget.faculties.map(
               (f) => DropdownMenuItem(
                 value: f.id,
@@ -941,9 +1712,12 @@ class _GradeFormState extends State<_GradeForm> {
         DropdownButtonFormField<String>(
           isExpanded: true,
           value: _selectedGroupId,
-          decoration: const InputDecoration(labelText: "Направление / группа", prefixIcon: Icon(Icons.groups_outlined)),
+          decoration: const InputDecoration(
+              labelText: "Направление / группа",
+              prefixIcon: Icon(Icons.groups_outlined)),
           items: [
-            const DropdownMenuItem<String>(value: null, child: Text("Все направления")),
+            const DropdownMenuItem<String>(
+                value: null, child: Text("Все направления")),
             ...groupsForFaculty.map(
               (g) => DropdownMenuItem(
                 value: g.id,
@@ -963,7 +1737,8 @@ class _GradeFormState extends State<_GradeForm> {
         const SizedBox(height: 16),
         DropdownButtonFormField<String>(
           isExpanded: true,
-          decoration: const InputDecoration(labelText: "Студент", prefixIcon: Icon(Icons.person)),
+          decoration: const InputDecoration(
+              labelText: "Студент", prefixIcon: Icon(Icons.person)),
           items: filteredStudents
               .map(
                 (s) => DropdownMenuItem(
@@ -981,7 +1756,8 @@ class _GradeFormState extends State<_GradeForm> {
         const SizedBox(height: 16),
         DropdownButtonFormField<String>(
           isExpanded: true,
-          decoration: const InputDecoration(labelText: "Норматив", prefixIcon: Icon(Icons.rule)),
+          decoration: const InputDecoration(
+              labelText: "Норматив", prefixIcon: Icon(Icons.rule)),
           items: widget.norms
               .map(
                 (n) => DropdownMenuItem(
@@ -997,21 +1773,132 @@ class _GradeFormState extends State<_GradeForm> {
           onChanged: (v) => setState(() => _selectedNormId = v),
         ),
         const SizedBox(height: 16),
-        Text("Оценка:", style: TextStyle(fontSize: Theme.of(context).textTheme.bodyLarge?.fontSize, fontWeight: FontWeight.bold)),
-        Slider(
-          value: _score.toDouble(),
-          min: 1,
-          max: 5,
-          divisions: 4,
-          label: _score.toString(),
-          onChanged: (v) => setState(() => _score = v.toInt()),
-          activeColor: Theme.of(context).primaryColor,
+        DropdownButtonFormField<String>(
+          isExpanded: true,
+          value: _selectedAcademicYear,
+          decoration: InputDecoration(
+            labelText: "Учебный год",
+            prefixIcon: const Icon(Icons.calendar_today_outlined),
+            suffixIcon: SizedBox(
+              width: 88,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    tooltip: "Добавить учебный год",
+                    icon: const Icon(Icons.add_circle_outline),
+                    onPressed: _addAcademicYear,
+                  ),
+                  IconButton(
+                    tooltip: "Управление списком годов",
+                    icon: const Icon(Icons.edit_calendar_outlined),
+                    onPressed: _manageAcademicYears,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          items: _academicYearOptions()
+              .map(
+                (y) => DropdownMenuItem(
+                  value: y,
+                  child: Text(y),
+                ),
+              )
+              .toList(),
+          onChanged: (v) {
+            if (v == null) return;
+            setState(() => _selectedAcademicYear = v);
+          },
         ),
-        Center(child: Text("$_score ${_getScoreSuffix(_score)}", style: TextStyle(fontSize: Theme.of(context).textTheme.headlineMedium?.fontSize, fontWeight: FontWeight.bold))),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: DropdownButtonFormField<int>(
+                isExpanded: true,
+                value: _selectedCourse,
+                decoration: const InputDecoration(
+                  labelText: "Курс",
+                  prefixIcon: Icon(Icons.school_outlined),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 1, child: Text("1 курс")),
+                  DropdownMenuItem(value: 2, child: Text("2 курс")),
+                  DropdownMenuItem(value: 3, child: Text("3 курс")),
+                  DropdownMenuItem(value: 4, child: Text("4 курс")),
+                  DropdownMenuItem(value: 5, child: Text("5 курс")),
+                  DropdownMenuItem(value: 6, child: Text("6 курс")),
+                ],
+                onChanged: (v) {
+                  if (v == null) return;
+                  setState(() => _selectedCourse = v);
+                },
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: DropdownButtonFormField<int>(
+                isExpanded: true,
+                value: _selectedSemester,
+                decoration: const InputDecoration(
+                  labelText: "Семестр",
+                  prefixIcon: Icon(Icons.event_note_outlined),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 1, child: Text("1 семестр")),
+                  DropdownMenuItem(value: 2, child: Text("2 семестр")),
+                ],
+                onChanged: (v) {
+                  if (v == null) return;
+                  setState(() => _selectedSemester = v);
+                },
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Text("Оценка:",
+            style: TextStyle(
+                fontSize: Theme.of(context).textTheme.bodyLarge?.fontSize,
+                fontWeight: FontWeight.bold)),
+        SliderTheme(
+          data: SliderTheme.of(context).copyWith(
+            activeTrackColor: Theme.of(context).colorScheme.primary,
+            inactiveTrackColor: Theme.of(context)
+                .colorScheme
+                .onSurfaceVariant
+                .withOpacity(0.35),
+            thumbColor: Theme.of(context).colorScheme.primary,
+            overlayColor:
+                Theme.of(context).colorScheme.primary.withOpacity(0.18),
+            valueIndicatorColor: Theme.of(context).colorScheme.primaryContainer,
+            valueIndicatorTextStyle: TextStyle(
+              color: Theme.of(context).colorScheme.onPrimaryContainer,
+              fontWeight: FontWeight.bold,
+            ),
+            trackHeight: 4.0,
+          ),
+          child: Slider(
+            value: _score.toDouble(),
+            min: 1,
+            max: 5,
+            divisions: 4,
+            label: _score.toString(),
+            onChanged: (v) => setState(() => _score = v.toInt()),
+          ),
+        ),
+        Center(
+            child: Text("$_score ${_getScoreSuffix(_score)}",
+                style: TextStyle(
+                    fontSize:
+                        Theme.of(context).textTheme.headlineMedium?.fontSize,
+                    fontWeight: FontWeight.bold))),
         const SizedBox(height: 16),
         TextField(
           controller: _commentController,
-          decoration: const InputDecoration(labelText: "Комментарий (необязательно)"),
+          decoration:
+              const InputDecoration(labelText: "Комментарий (необязательно)"),
           maxLines: 2,
         ),
         const SizedBox(height: 24),
@@ -1029,35 +1916,39 @@ class _GradeFormState extends State<_GradeForm> {
     return "баллов";
   }
 
-  void _submit() async {
+  Future<void> _submit() async {
     if (_selectedStudentId == null || _selectedNormId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Выберите студента и норматив")));
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Выберите студента и норматив")));
       return;
     }
-    
-    final created = await ApiService().createGrade(
-      studentId: _selectedStudentId!,
-      normId: _selectedNormId!,
-      score: _score,
-      comment: _commentController.text,
-    );
 
-    if (created == null) {
+    try {
+      await ApiService().createGrade(
+        studentId: _selectedStudentId!,
+        normId: _selectedNormId!,
+        academicYear: _selectedAcademicYear,
+        course: _selectedCourse,
+        semester: _selectedSemester,
+        score: _score,
+        comment: _commentController.text,
+      );
+
+      widget.onGradeAdded();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text("Оценка сохранена")));
+      setState(() {
+        _selectedStudentId = null;
+        _selectedNormId = null;
+        _score = 5;
+        _commentController.clear();
+      });
+    } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Не удалось сохранить оценку. Проверьте соединение и повторите.")),
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
       );
-      return;
     }
-
-    widget.onGradeAdded();
-
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Оценка сохранена")));
-    setState(() {
-      _selectedStudentId = null;
-      _selectedNormId = null;
-      _score = 5;
-      _commentController.clear();
-    });
   }
 }

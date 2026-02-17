@@ -54,12 +54,18 @@ class Norm(NormBase):
 class GradeBase(BaseModel):
     student_id: str
     norm_id: str
+    academic_year: str = ""
+    course: int = 1
+    semester: int = 1
     score: int
     comment: Optional[str] = None
 
 class GradeCreate(BaseModel):
     student_id: str
     norm_id: str
+    academic_year: str = ""
+    course: int = 1
+    semester: int = 1
     score: int
     comment: Optional[str] = None
 

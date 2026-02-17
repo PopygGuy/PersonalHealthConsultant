@@ -31,13 +31,17 @@ class _StudentDashboardState extends State<StudentDashboard> {
   final _stepService = const StepTrackerService();
   late final StepTrackerStorage _stepStorage; // Use late initialization
   late User _currentUser;
-  
+
   // Data State
   List<Grade> _grades = [];
   List<Norm> _norms = [];
   List<Faculty> _faculties = [];
   List<Group> _groups = [];
   bool _isLoading = true;
+  String? _journalFilterNormId;
+  String? _journalFilterAcademicYear;
+  int? _journalFilterCourse;
+  int? _journalFilterSemester;
 
   String? _selectedMood;
   String? _moodAdvice;
@@ -84,14 +88,37 @@ class _StudentDashboardState extends State<StudentDashboard> {
 
   // Helper to get norm name by ID
   String _getNormName(String normId) {
-    return _norms.firstWhere((n) => n.id == normId, orElse: () => Norm(id: '', name: 'Неизвестный норматив')).name;
+    return _norms
+        .firstWhere((n) => n.id == normId,
+            orElse: () => Norm(id: '', name: 'Неизвестный норматив'))
+        .name;
+  }
+
+  String _defaultAcademicYear() {
+    final now = DateTime.now();
+    final startYear = now.month >= 9 ? now.year : now.year - 1;
+    return '$startYear/${startYear + 1}';
+  }
+
+  List<String> _academicYearOptions() {
+    final now = DateTime.now();
+    final currentStartYear = now.month >= 9 ? now.year : now.year - 1;
+    final years = <String>{
+      ...List<String>.generate(6, (i) {
+        final start = currentStartYear - 2 + i;
+        return '$start/${start + 1}';
+      }),
+      ..._grades.map((g) => g.academicYear.trim()).where((y) => y.isNotEmpty),
+    }.toList();
+    years.sort((a, b) => b.compareTo(a));
+    return years;
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _isLoading 
-          ? const Center(child: CircularProgressIndicator()) 
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
           : _buildBody(),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
@@ -139,12 +166,18 @@ class _StudentDashboardState extends State<StudentDashboard> {
 
   Widget _buildBody() {
     switch (_currentIndex) {
-      case 0: return _buildDashboardTab();
-      case 1: return _buildJournalTab();
-      case 2: return _buildStepsTab();
-      case 3: return _buildHealthTab();
-      case 4: return _buildProfileTab();
-      default: return const Center(child: Text("Ошибка"));
+      case 0:
+        return _buildDashboardTab();
+      case 1:
+        return _buildJournalTab();
+      case 2:
+        return _buildStepsTab();
+      case 3:
+        return _buildHealthTab();
+      case 4:
+        return _buildProfileTab();
+      default:
+        return const Center(child: Text("Ошибка"));
     }
   }
 
@@ -165,7 +198,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
               color: theme.colorScheme.primaryContainer,
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(icon, size: 18, color: theme.colorScheme.onPrimaryContainer),
+            child: Icon(icon,
+                size: 18, color: theme.colorScheme.onPrimaryContainer),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -206,7 +240,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
     final topRecentGrades = recentGrades.take(3).toList();
     double avgScore = 0;
     if (_grades.isNotEmpty) {
-      avgScore = _grades.map((g) => g.score).reduce((a, b) => a + b) / _grades.length;
+      avgScore =
+          _grades.map((g) => g.score).reduce((a, b) => a + b) / _grades.length;
     }
 
     return CustomScrollView(
@@ -230,7 +265,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
                         child: _buildStatCard(
                           context,
                           title: "Средний балл (нормативы)",
-                          value: avgScore > 0 ? avgScore.toStringAsFixed(1) : "-",
+                          value:
+                              avgScore > 0 ? avgScore.toStringAsFixed(1) : "-",
                           icon: Icons.school,
                           color: Theme.of(context).colorScheme.primary,
                         ),
@@ -337,7 +373,9 @@ class _StudentDashboardState extends State<StudentDashboard> {
                             width: double.infinity,
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .surfaceContainerHighest,
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: Column(
@@ -345,10 +383,15 @@ class _StudentDashboardState extends State<StudentDashboard> {
                               children: [
                                 Text(
                                   "Совет на сегодня (${_selectedMood ?? '-'})",
-                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    fontWeight: FontWeight.w700,
-                                    color: Theme.of(context).colorScheme.primary,
-                                  ),
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall
+                                      ?.copyWith(
+                                        fontWeight: FontWeight.w700,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .primary,
+                                      ),
                                 ),
                                 const SizedBox(height: 6),
                                 Text(_moodAdvice!),
@@ -370,6 +413,22 @@ class _StudentDashboardState extends State<StudentDashboard> {
 
   // --- TAB 2: Journal (Grades) ---
   Widget _buildJournalTab() {
+    final filteredGrades = _grades.where((g) {
+      if (_journalFilterNormId != null && g.normId != _journalFilterNormId)
+        return false;
+      if (_journalFilterAcademicYear != null &&
+          (g.academicYear.isEmpty ? _defaultAcademicYear() : g.academicYear) !=
+              _journalFilterAcademicYear) {
+        return false;
+      }
+      if (_journalFilterCourse != null && g.course != _journalFilterCourse)
+        return false;
+      if (_journalFilterSemester != null &&
+          g.semester != _journalFilterSemester) return false;
+      return true;
+    }).toList()
+      ..sort((a, b) => b.date.compareTo(a.date));
+
     return CustomScrollView(
       slivers: [
         _buildSliverAppBar(
@@ -385,22 +444,144 @@ class _StudentDashboardState extends State<StudentDashboard> {
         else
           SliverToBoxAdapter(
             child: ResponsiveWrapper(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                child: Column(
+                  children: [
+                    DropdownButtonFormField<String>(
+                      isExpanded: true,
+                      value: _journalFilterNormId,
+                      decoration: const InputDecoration(
+                        labelText: "Норматив",
+                        prefixIcon: Icon(Icons.rule_outlined),
+                      ),
+                      items: [
+                        const DropdownMenuItem<String>(
+                          value: null,
+                          child: Text("Все нормативы"),
+                        ),
+                        ..._norms.map(
+                          (n) => DropdownMenuItem<String>(
+                            value: n.id,
+                            child: Text(
+                              n.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ),
+                      ],
+                      onChanged: (value) =>
+                          setState(() => _journalFilterNormId = value),
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      isExpanded: true,
+                      value: _journalFilterAcademicYear,
+                      decoration: const InputDecoration(
+                        labelText: "Учебный год",
+                        prefixIcon: Icon(Icons.calendar_today_outlined),
+                      ),
+                      items: [
+                        const DropdownMenuItem<String>(
+                          value: null,
+                          child: Text("Все учебные годы"),
+                        ),
+                        ..._academicYearOptions().map(
+                          (y) => DropdownMenuItem<String>(
+                            value: y,
+                            child: Text(y),
+                          ),
+                        ),
+                      ],
+                      onChanged: (value) =>
+                          setState(() => _journalFilterAcademicYear = value),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<int>(
+                            isExpanded: true,
+                            value: _journalFilterCourse,
+                            decoration: const InputDecoration(
+                              labelText: "Курс",
+                              prefixIcon: Icon(Icons.school_outlined),
+                            ),
+                            items: const [
+                              DropdownMenuItem<int>(
+                                  value: null, child: Text("Все курсы")),
+                              DropdownMenuItem<int>(
+                                  value: 1, child: Text("1 курс")),
+                              DropdownMenuItem<int>(
+                                  value: 2, child: Text("2 курс")),
+                              DropdownMenuItem<int>(
+                                  value: 3, child: Text("3 курс")),
+                              DropdownMenuItem<int>(
+                                  value: 4, child: Text("4 курс")),
+                              DropdownMenuItem<int>(
+                                  value: 5, child: Text("5 курс")),
+                              DropdownMenuItem<int>(
+                                  value: 6, child: Text("6 курс")),
+                            ],
+                            onChanged: (value) =>
+                                setState(() => _journalFilterCourse = value),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: DropdownButtonFormField<int>(
+                            isExpanded: true,
+                            value: _journalFilterSemester,
+                            decoration: const InputDecoration(
+                              labelText: "Семестр",
+                              prefixIcon: Icon(Icons.event_note_outlined),
+                            ),
+                            items: const [
+                              DropdownMenuItem<int>(
+                                  value: null, child: Text("Все семестры")),
+                              DropdownMenuItem<int>(
+                                  value: 1, child: Text("1 семестр")),
+                              DropdownMenuItem<int>(
+                                  value: 2, child: Text("2 семестр")),
+                            ],
+                            onChanged: (value) =>
+                                setState(() => _journalFilterSemester = value),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        if (filteredGrades.isEmpty)
+          const SliverFillRemaining(
+            hasScrollBody: false,
+            child: Center(child: Text("По выбранным фильтрам нет оценок")),
+          )
+        else
+          SliverToBoxAdapter(
+            child: ResponsiveWrapper(
               child: ListView.separated(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 padding: const EdgeInsets.all(16),
-                itemCount: _grades.length,
+                itemCount: filteredGrades.length,
                 separatorBuilder: (c, i) => const SizedBox(height: 12),
                 itemBuilder: (context, index) {
-                  final g = _grades[index];
+                  final g = filteredGrades[index];
                   final normName = _getNormName(g.normId);
-                  final advice = TrainingAdvisor.getAdviceForNorm(normName, g.score);
+                  final advice =
+                      TrainingAdvisor.getAdviceForNorm(normName, g.score);
 
                   return Card(
                     child: ExpansionTile(
                       shape: const Border(),
                       leading: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
                         decoration: BoxDecoration(
                           color: _getScoreColor(g.score).withOpacity(0.1),
                           borderRadius: BorderRadius.circular(8),
@@ -414,10 +595,13 @@ class _StudentDashboardState extends State<StudentDashboard> {
                           ),
                         ),
                       ),
-                      title: Text(normName, style: const TextStyle(fontWeight: FontWeight.w600)),
+                      title: Text(normName,
+                          style: const TextStyle(fontWeight: FontWeight.w600)),
                       subtitle: Text(
-                        g.date.toString().split(' ')[0],
-                        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                        "${(g.academicYear.isEmpty ? _defaultAcademicYear() : g.academicYear)} • ${g.course} курс / ${g.semester} семестр — ${g.date.toString().split(' ')[0]}",
+                        style: TextStyle(
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant),
                       ),
                       childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                       children: [
@@ -428,7 +612,9 @@ class _StudentDashboardState extends State<StudentDashboard> {
                               margin: const EdgeInsets.only(top: 8),
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
-                                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .surfaceContainerHighest,
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Text(g.comment!),
@@ -439,12 +625,18 @@ class _StudentDashboardState extends State<StudentDashboard> {
                           Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Icon(Icons.info_outline, size: 16, color: Theme.of(context).colorScheme.primary),
+                              Icon(Icons.info_outline,
+                                  size: 16,
+                                  color: Theme.of(context).colorScheme.primary),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
                                   advice,
-                                  style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                                  style: TextStyle(
+                                      fontSize: 13,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant),
                                 ),
                               ),
                             ],
@@ -492,7 +684,9 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     children: [
                       UserAvatar(
                         displayName: _currentUser.fullName,
-                        seed: _currentUser.id.isNotEmpty ? _currentUser.id : _currentUser.login,
+                        seed: _currentUser.id.isNotEmpty
+                            ? _currentUser.id
+                            : _currentUser.login,
                         role: UserRole.student,
                         radius: 40,
                       ),
@@ -504,14 +698,19 @@ class _StudentDashboardState extends State<StudentDashboard> {
                       ),
                       const SizedBox(height: 8),
                       Chip(
-                        label: Text(_currentUser.role == UserRole.student ? "Студент" : "Пользователь"),
-                        backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                        label: Text(_currentUser.role == UserRole.student
+                            ? "Студент"
+                            : "Пользователь"),
+                        backgroundColor: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerHighest,
                       ),
                     ],
                   ),
                 ),
                 const SizedBox(height: 32),
-                _buildProfileItem(Icons.school, "Факультет", _resolveFacultyName()),
+                _buildProfileItem(
+                    Icons.school, "Факультет", _resolveFacultyName()),
                 _buildProfileItem(Icons.class_, "Группа", _resolveGroupName()),
                 _buildProfileItem(Icons.login, "Логин", _currentUser.login),
                 const Divider(height: 32),
@@ -520,17 +719,20 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 ListTile(
                   leading: const Icon(Icons.privacy_tip_outlined),
                   title: const Text("Приватность"),
-                  subtitle: const Text("Данные о самочувствии видны только вам"),
+                  subtitle:
+                      const Text("Данные о самочувствии видны только вам"),
                 ),
                 ListTile(
                   leading: const Icon(Icons.exit_to_app, color: Colors.red),
-                  title: const Text("Выйти", style: TextStyle(color: Colors.red)),
+                  title:
+                      const Text("Выйти", style: TextStyle(color: Colors.red)),
                   onTap: () async {
                     await SessionService().clearSession();
                     await _api.logout();
                     if (!mounted) return;
                     Navigator.of(context).pushAndRemoveUntil(
-                      MaterialPageRoute(builder: (context) => const LoginScreen()),
+                      MaterialPageRoute(
+                          builder: (context) => const LoginScreen()),
                       (route) => false,
                     );
                   },
@@ -543,12 +745,11 @@ class _StudentDashboardState extends State<StudentDashboard> {
     );
   }
 
-  Widget _buildSummaryCard(BuildContext context, {
-    required String title, 
-    required IconData icon, 
-    required Color color, 
-    required Widget content
-  }) {
+  Widget _buildSummaryCard(BuildContext context,
+      {required String title,
+      required IconData icon,
+      required Color color,
+      required Widget content}) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -559,7 +760,9 @@ class _StudentDashboardState extends State<StudentDashboard> {
               children: [
                 Icon(icon, color: color, size: 20),
                 const SizedBox(width: 8),
-                Text(title, style: TextStyle(fontWeight: FontWeight.bold, color: color)),
+                Text(title,
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, color: color)),
               ],
             ),
             const SizedBox(height: 12),
@@ -609,7 +812,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
           const SizedBox(height: 10),
           LinearProgressIndicator(value: progress),
           const SizedBox(height: 6),
-          Text("Прогресс цели: $progressPercent% (${stats.stepsToday}/${stats.dailyGoal})"),
+          Text(
+              "Прогресс цели: $progressPercent% (${stats.stepsToday}/${stats.dailyGoal})"),
           const SizedBox(height: 12),
           Align(
             alignment: Alignment.centerRight,
@@ -624,12 +828,11 @@ class _StudentDashboardState extends State<StudentDashboard> {
     );
   }
 
-  Widget _buildStatCard(BuildContext context, {
-    required String title, 
-    required String value, 
-    required IconData icon, 
-    required Color color
-  }) {
+  Widget _buildStatCard(BuildContext context,
+      {required String title,
+      required String value,
+      required IconData icon,
+      required Color color}) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -638,7 +841,11 @@ class _StudentDashboardState extends State<StudentDashboard> {
           children: [
             Icon(icon, color: color, size: 24),
             const SizedBox(height: 12),
-            Text(value, style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold)),
+            Text(value,
+                style: Theme.of(context)
+                    .textTheme
+                    .headlineMedium
+                    ?.copyWith(fontWeight: FontWeight.bold)),
             Text(title, style: Theme.of(context).textTheme.bodySmall),
           ],
         ),
@@ -655,15 +862,17 @@ class _StudentDashboardState extends State<StudentDashboard> {
   }
 
   String _resolveFacultyName() {
-    if (_currentUser.faculty != null && _currentUser.faculty!.trim().isNotEmpty) {
+    if (_currentUser.faculty != null &&
+        _currentUser.faculty!.trim().isNotEmpty) {
       return _currentUser.faculty!;
     }
     final facultyId = _currentUser.facultyId;
     if (facultyId == null || facultyId.isEmpty) return 'Не указан';
-    final faculty = _faculties.where((f) => f.id == facultyId).cast<Faculty?>().firstWhere(
-          (f) => f != null,
-          orElse: () => null,
-        );
+    final faculty =
+        _faculties.where((f) => f.id == facultyId).cast<Faculty?>().firstWhere(
+              (f) => f != null,
+              orElse: () => null,
+            );
     return faculty?.name ?? 'Не указан';
   }
 
@@ -673,10 +882,11 @@ class _StudentDashboardState extends State<StudentDashboard> {
     }
     final groupId = _currentUser.groupId;
     if (groupId == null || groupId.isEmpty) return 'Не указана';
-    final group = _groups.where((g) => g.id == groupId).cast<Group?>().firstWhere(
-          (g) => g != null,
-          orElse: () => null,
-        );
+    final group =
+        _groups.where((g) => g.id == groupId).cast<Group?>().firstWhere(
+              (g) => g != null,
+              orElse: () => null,
+            );
     return group?.name ?? 'Не указана';
   }
 
@@ -767,5 +977,4 @@ class _StudentDashboardState extends State<StudentDashboard> {
       _stepSummaryLoading = false;
     });
   }
-
 }
