@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 from typing import List
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 def _default_database_url() -> str:
@@ -13,6 +13,12 @@ def _default_database_url() -> str:
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
     # Default to SQLite for easy local dev without Docker
     DATABASE_URL: str = os.getenv("DATABASE_URL", _default_database_url())
     SECRET_KEY: str = os.getenv("SECRET_KEY", "supersecretkey")
@@ -24,7 +30,7 @@ class Settings(BaseSettings):
     )
     CORS_ORIGIN_REGEX: str = os.getenv(
         "CORS_ORIGIN_REGEX",
-        r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
+        r"^https?://((localhost|127\.0\.0\.1)|(10\.\d+\.\d+\.\d+)|(192\.168\.\d+\.\d+)|(172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+))(:\d+)?$",
     )
 
     def cors_origins(self) -> List[str]:

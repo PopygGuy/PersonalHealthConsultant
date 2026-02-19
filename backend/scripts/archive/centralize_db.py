@@ -1,11 +1,12 @@
 """Centralize reference catalog into a single backend DB.
 
+Archived utility script. Kept for historical one-time migrations.
 This script merges faculties/groups/norms from a legacy SQLite DB
 (`./phc.db` in project root) into the canonical backend DB
 (`./backend/phc.db`), keeping backend DB as the single source of truth.
 
 Usage:
-  python backend/scripts/centralize_db.py
+  python backend/scripts/archive/centralize_db.py
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ import sqlite3
 from pathlib import Path
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 BACKEND_DB = PROJECT_ROOT / "backend" / "phc.db"
 LEGACY_DB = PROJECT_ROOT / "phc.db"
 

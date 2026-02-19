@@ -135,8 +135,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
       final faculties = await _api.getFaculties();
       final groups = await _api.getGroups();
       final norms = await _api.getNorms();
-      final grades = await _api
-          .getGrades(); // Get all grades for now, or filter by teacher if backend supports it
+      final grades = await _api.getGrades();
 
       setState(() {
         _students = students;
@@ -371,7 +370,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                 FilledButton.icon(
                   onPressed: () async {
                     await SessionService().clearSession();
-                    await _api.logout();
                     if (!mounted) return;
                     Navigator.of(context).pushAndRemoveUntil(
                       MaterialPageRoute(
@@ -1396,8 +1394,17 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
           child: TextFormField(
             controller: controller,
             decoration: const InputDecoration(labelText: "Название"),
-            validator: (v) =>
-                v == null || v.isEmpty ? 'Введите название' : null,
+            validator: (v) {
+              final value = (v ?? '').trim();
+              if (value.isEmpty) return 'Введите название';
+              final duplicateExists = _norms.any(
+                (n) => n.name.trim().toLowerCase() == value.toLowerCase(),
+              );
+              if (duplicateExists) {
+                return 'Норматив с таким названием уже существует';
+              }
+              return null;
+            },
           ),
         ),
         actions: [
@@ -1406,9 +1413,19 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
           ElevatedButton(
             onPressed: () async {
               if (formKey.currentState!.validate()) {
-                await _api.createNorm(controller.text.trim());
-                _loadData();
-                if (mounted) Navigator.pop(ctx);
+                try {
+                  await _api.createNorm(controller.text.trim());
+                  _loadData();
+                  if (mounted) Navigator.pop(ctx);
+                } catch (e) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content:
+                          Text(e.toString().replaceFirst('Exception: ', '')),
+                    ),
+                  );
+                }
               }
             },
             child: const Text("Создать"),

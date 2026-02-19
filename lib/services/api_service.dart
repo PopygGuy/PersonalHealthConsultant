@@ -15,7 +15,6 @@ class ApiService {
   ApiService._internal();
 
   static const String _jwtTokenKey = 'jwt_token';
-  static const String _apiBaseUrlKey = 'api_base_url';
   static const String _apiBaseUrlDefine =
       String.fromEnvironment('API_BASE_URL');
 
@@ -34,13 +33,10 @@ class ApiService {
   String get baseUrl => _dio.options.baseUrl;
 
   Future<void> init() async {
-    final savedBaseUrl = await _storage.read(key: _apiBaseUrlKey);
     final resolvedBaseUrl = _normalizeBaseUrl(
       _apiBaseUrlDefine.isNotEmpty
           ? _apiBaseUrlDefine
-          : (savedBaseUrl?.isNotEmpty == true
-              ? savedBaseUrl!
-              : _defaultBaseUrl()),
+          : _defaultBaseUrl(),
     );
 
     _dio.options.baseUrl = resolvedBaseUrl;
@@ -49,18 +45,12 @@ class ApiService {
     // Ideally, validate token or fetch user profile here
   }
 
-  Future<void> setBaseUrl(String rawBaseUrl) async {
-    final normalized = _normalizeBaseUrl(rawBaseUrl);
-    _dio.options.baseUrl = normalized;
-    await _storage.write(key: _apiBaseUrlKey, value: normalized);
-  }
-
   String _defaultBaseUrl() {
     if (kIsWeb) {
       return 'http://localhost:8000';
     }
     if (Platform.isAndroid) {
-      // Emulator default. On real devices set custom server URL in login screen.
+      // Emulator default for local development.
       return 'http://10.0.2.2:8000';
     }
     return 'http://127.0.0.1:8000';
@@ -132,7 +122,6 @@ class ApiService {
         _currentUser = User(
           id: data['id'],
           login: username,
-          password: '',
           role: role,
           fullName: data['full_name'],
           facultyId: data['faculty_id'],
@@ -193,9 +182,15 @@ class ApiService {
     try {
       final response = await post('/faculties', {'name': name});
       return Faculty.fromJson(response.data);
+    } on DioException catch (e) {
+      final detail = e.response?.data is Map<String, dynamic>
+          ? (e.response?.data['detail']?.toString() ??
+              'Ошибка создания факультета')
+          : 'Ошибка создания факультета';
+      throw Exception(detail);
     } catch (e) {
       print('createFaculty error: $e');
-      return null;
+      throw Exception('Ошибка создания факультета');
     }
   }
 
@@ -359,9 +354,15 @@ class ApiService {
     try {
       final response = await post('/norms', {'name': name});
       return Norm.fromJson(response.data);
+    } on DioException catch (e) {
+      final detail = e.response?.data is Map<String, dynamic>
+          ? (e.response?.data['detail']?.toString() ??
+              'Ошибка создания норматива')
+          : 'Ошибка создания норматива';
+      throw Exception(detail);
     } catch (e) {
       print('createNorm error: $e');
-      return null;
+      throw Exception('Ошибка создания норматива');
     }
   }
 

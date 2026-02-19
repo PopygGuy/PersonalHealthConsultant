@@ -387,7 +387,6 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                 FilledButton.icon(
                   onPressed: () async {
                     await SessionService().clearSession();
-                    await _api.logout();
                     if (!mounted) return;
                     Navigator.pushReplacement(
                       context,
@@ -1170,7 +1169,17 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           child: TextFormField(
             controller: controller,
             decoration: const InputDecoration(labelText: "Название"),
-            validator: (v) => _validateNotEmpty(v, 'Название'),
+            validator: (v) {
+              final value = (v ?? '').trim();
+              if (value.isEmpty) return 'Введите Название';
+              final duplicateExists = _faculties.any(
+                (f) => f.name.trim().toLowerCase() == value.toLowerCase(),
+              );
+              if (duplicateExists) {
+                return 'Факультет с таким названием уже существует';
+              }
+              return null;
+            },
           ),
         ),
         actions: [
@@ -1178,9 +1187,19 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           ElevatedButton(
             onPressed: () async {
               if (formKey.currentState!.validate()) {
-                await _api.createFaculty(controller.text.trim());
-                _loadData();
-                if (mounted) Navigator.pop(ctx);
+                try {
+                  await _api.createFaculty(controller.text.trim());
+                  _loadData();
+                  if (mounted) Navigator.pop(ctx);
+                } catch (e) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content:
+                          Text(e.toString().replaceFirst('Exception: ', '')),
+                    ),
+                  );
+                }
               }
             },
             child: const Text("Создать"),
@@ -1216,7 +1235,17 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                   TextFormField(
                     controller: controller,
                     decoration: const InputDecoration(labelText: "Название"),
-                    validator: (v) => _validateNotEmpty(v, 'Название'),
+                    validator: (v) {
+                      final value = (v ?? '').trim();
+                      if (value.isEmpty) return 'Введите Название';
+                      final duplicateExists = _groups.any(
+                        (g) => g.name.trim().toLowerCase() == value.toLowerCase(),
+                      );
+                      if (duplicateExists) {
+                        return 'Группа с таким названием уже существует';
+                      }
+                      return null;
+                    },
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(

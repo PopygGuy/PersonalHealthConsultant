@@ -728,7 +728,6 @@ class _StudentDashboardState extends State<StudentDashboard> {
                       const Text("Выйти", style: TextStyle(color: Colors.red)),
                   onTap: () async {
                     await SessionService().clearSession();
-                    await _api.logout();
                     if (!mounted) return;
                     Navigator.of(context).pushAndRemoveUntil(
                       MaterialPageRoute(

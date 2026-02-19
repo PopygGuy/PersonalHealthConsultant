@@ -57,12 +57,7 @@ def read_users(role: str = None, db: Session = Depends(get_db), current_user: mo
     q = db.query(models.User)
     if role:
         q = q.filter(models.User.role == role)
-    
-    # Teachers can only see students in their groups? Or all students?
-    # For now, let's say teachers can see all students or implement logic later.
-    # The requirement says "Teacher sees their students".
-    # Assuming "their students" means students in groups they teach, or just all students for simplicity now.
-    
+
     users = q.all()
     return [_user_to_schema(user, db) for user in users]
 

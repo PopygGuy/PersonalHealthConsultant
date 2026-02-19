@@ -3,7 +3,6 @@ import 'user_role.dart';
 class User {
   final String id;
   String login;
-  String password;
   final UserRole role;
   String fullName;
   
@@ -17,7 +16,6 @@ class User {
   User({
     required this.id,
     required this.login,
-    required this.password,
     required this.role,
     required this.fullName,
     this.facultyId,
@@ -29,7 +27,6 @@ class User {
   Map<String, dynamic> toJson() => {
     'id': id,
     'login': login,
-    'password': password,
     'role': role.index,
     'fullName': fullName,
     'faculty_id': facultyId,
@@ -52,13 +49,12 @@ class User {
     return User(
       id: json['id'],
       login: json['login'],
-      password: json['password'] ?? '',
       role: role,
       fullName: json['full_name'] ?? json['fullName'],
       facultyId: json['faculty_id'],
       groupId: json['group_id'],
-      faculty: json['faculty'], // Legacy or if provided
-      group: json['group'],     // Legacy or if provided
+      faculty: json['faculty'],
+      group: json['group'],
     );
   }
 }
