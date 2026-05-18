@@ -69,7 +69,8 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
-    final double navLabelSize = width < 380 ? 9.0 : (width < 600 ? 10.5 : 14.0);
+    final isCompactNav = width < 430;
+    final double navLabelSize = width < 380 ? 8.5 : (width < 600 ? 10.0 : 14.0);
 
     return Scaffold(
       body: _isLoading 
@@ -87,30 +88,31 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           }),
         ),
         child: NavigationBar(
+          height: isCompactNav ? 72 : null,
           selectedIndex: _currentIndex,
           onDestinationSelected: (index) => setState(() => _currentIndex = index),
-          destinations: const [
+          destinations: [
             NavigationDestination(
-              icon: Icon(Icons.school_outlined),
-              selectedIcon: Icon(Icons.school),
-              label: 'Преподаватели',
+              icon: const Icon(Icons.school_outlined),
+              selectedIcon: const Icon(Icons.school),
+              label: isCompactNav ? 'Препод.' : 'Преподаватели',
             ),
-            NavigationDestination(
+            const NavigationDestination(
               icon: Icon(Icons.people_outline),
               selectedIcon: Icon(Icons.people),
               label: 'Студенты',
             ),
             NavigationDestination(
-              icon: Icon(Icons.domain_outlined),
-              selectedIcon: Icon(Icons.domain),
-              label: 'Факультеты',
+              icon: const Icon(Icons.domain_outlined),
+              selectedIcon: const Icon(Icons.domain),
+              label: isCompactNav ? 'Фак.' : 'Факультеты',
             ),
-            NavigationDestination(
+            const NavigationDestination(
               icon: Icon(Icons.groups_outlined),
               selectedIcon: Icon(Icons.groups),
               label: 'Группы',
             ),
-            NavigationDestination(
+            const NavigationDestination(
               icon: Icon(Icons.person_outline),
               selectedIcon: Icon(Icons.person),
               label: 'Профиль',
@@ -184,11 +186,6 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   String? _validateFullName(String? value) {
     final name = value?.trim() ?? '';
     if (name.isEmpty) return 'Введите ФИО';
-    return null;
-  }
-
-  String? _validateNotEmpty(String? value, String label) {
-    if (value == null || value.trim().isEmpty) return 'Введите $label';
     return null;
   }
 

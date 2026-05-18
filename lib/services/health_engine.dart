@@ -119,7 +119,7 @@ class HealthEngine {
           fatPerKg = 0.8; 
         } else if (type == DayType.rest) {
           targetCalories = tdee * 0.75; 
-          title = "Отдых (Low Carb)";
+          title = "Отдых (низкоуглеводный день)";
           desc = "Максимум белка, минимум углей.";
           proteinPerKg = highBmi ? 1.8 : 2.2; 
           fatPerKg = 1.0; 

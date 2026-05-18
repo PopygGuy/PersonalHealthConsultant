@@ -216,6 +216,47 @@ flutter run --dart-define API_BASE_URL=http://192.168.1.42:8000
 
 Ограничение безопасности: логин `root` разрешен только с устройства, где запущен сервер API.
 
+## Развертывание через VPS (публичный доступ)
+
+Если приложение должно работать не только в локальной сети, backend можно развернуть на VPS с публичным IP.
+В этом режиме APK собирается с постоянным адресом API, пользователь устанавливает приложение и входит по выданному логину/паролю.
+
+Подробная инструкция:
+
+- `docs/deployment_vps.md`
+
+Краткий сценарий:
+
+```bash
+ssh root@SERVER_IP
+cd /opt
+git clone https://github.com/PopygGuy/PersonalHealthConsultant.git phc
+cd /opt/phc/backend
+chmod +x scripts/setup_vps.sh
+sudo ./scripts/setup_vps.sh --server-ip SERVER_IP
+```
+
+Проверка API:
+
+```text
+http://SERVER_IP:8000/docs
+```
+
+Сборка APK под VPS:
+
+```powershell
+flutter pub get
+flutter build apk --release --dart-define API_BASE_URL=http://SERVER_IP:8000
+```
+
+Готовый файл для передачи пользователю:
+
+```text
+build/app/outputs/flutter-apk/app-release.apk
+```
+
+Пользователь устанавливает APK и вводит только логин и пароль. Учетные записи создаются в кабинете администратора.
+
 ## Почему проект полезен для вуза
 
 - снижает нагрузку на преподавателя при контроле нормативов;

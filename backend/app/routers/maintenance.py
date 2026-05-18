@@ -3,8 +3,13 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from .. import models, auth
-from scripts.dedupe_faculties import dedupe as dedupe_faculties
-from scripts.seed_initial_catalog import seed_catalog
+
+try:
+    from scripts.dedupe_faculties import dedupe as dedupe_faculties
+    from scripts.seed_initial_catalog import seed_catalog
+except ModuleNotFoundError:
+    from backend.scripts.dedupe_faculties import dedupe as dedupe_faculties
+    from backend.scripts.seed_initial_catalog import seed_catalog
 
 
 router = APIRouter(prefix="/admin/maintenance")

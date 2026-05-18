@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, status, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from datetime import timedelta
 from .database import get_db
@@ -8,7 +9,13 @@ from . import models, schemas, auth
 from .config import settings
 from .routers import structures, users, norms, grades, steps, maintenance
 
-app = FastAPI(title="Personal Health Consultant API")
+app = FastAPI(
+    title="PersonalHealthConsultant.API",
+    swagger_ui_parameters={
+        "docExpansion": "list",
+        "defaultModelsExpandDepth": -1,
+    },
+)
 
 # Configure CORS
 app.add_middleware(
@@ -39,7 +46,12 @@ async def login_for_access_token(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ):
-    user = db.query(models.User).filter(models.User.login == form_data.username).first()
+    login = form_data.username.strip()
+    user = (
+        db.query(models.User)
+        .filter(func.lower(models.User.login) == login.lower())
+        .first()
+    )
     if not user or not auth.verify_password(form_data.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

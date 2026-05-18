@@ -41,6 +41,17 @@ def create_grade(grade: schemas.GradeCreate, db: Session = Depends(get_db), curr
     now = datetime.utcnow()
     academic_year = (grade.academic_year or "").strip() or _default_academic_year(now)
 
+    higher_existing = db.query(models.Grade).filter(
+        models.Grade.student_id == grade.student_id,
+        models.Grade.norm_id == grade.norm_id,
+        models.Grade.score > grade.score,
+    ).first()
+    if higher_existing is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="У студента уже есть более высокий балл по этому нормативу. Понижать результат нельзя",
+        )
+
     existing = db.query(models.Grade).filter(
         models.Grade.student_id == grade.student_id,
         models.Grade.norm_id == grade.norm_id,

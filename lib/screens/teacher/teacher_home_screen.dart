@@ -21,9 +21,15 @@ class TeacherHomeScreen extends StatefulWidget {
   State<TeacherHomeScreen> createState() => _TeacherHomeScreenState();
 }
 
-class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
+String _studentSearchText(User student) {
+  return student.fullName.trim().toLowerCase();
+}
+
+class _TeacherHomeScreenState extends State<TeacherHomeScreen>
+    with SingleTickerProviderStateMixin {
   int _currentIndex = 0;
   final _api = ApiService();
+  late final TabController _journalTabController;
 
   // Data State
   List<User> _students = [];
@@ -45,6 +51,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   int? _historyFilterCourse;
   int? _historyFilterSemester;
   String _historySearchQuery = '';
+  final TextEditingController _historySearchController = TextEditingController();
   DateTime? _journalVisibleFrom;
 
   String _defaultAcademicYear() {
@@ -70,8 +77,16 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   @override
   void initState() {
     super.initState();
+    _journalTabController = TabController(length: 2, vsync: this);
     _loadHistoryPreferences();
     _loadData();
+  }
+
+  @override
+  void dispose() {
+    _journalTabController.dispose();
+    _historySearchController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadHistoryPreferences() async {
@@ -128,8 +143,10 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     await _saveHistoryPreferences();
   }
 
-  Future<void> _loadData() async {
-    setState(() => _isLoading = true);
+  Future<void> _loadData({bool showLoader = true}) async {
+    if (showLoader) {
+      setState(() => _isLoading = true);
+    }
     try {
       final students = await _api.getUsers(role: 'student');
       final faculties = await _api.getFaculties();
@@ -143,11 +160,11 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
         _groups = groups;
         _norms = norms;
         _grades = grades;
-        _isLoading = false;
+        if (showLoader) _isLoading = false;
       });
     } catch (e) {
       print('Error loading data: $e');
-      setState(() => _isLoading = false);
+      if (showLoader) setState(() => _isLoading = false);
     }
   }
 
@@ -414,35 +431,22 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     if (studentQuery.isNotEmpty) {
       filteredStudents = filteredStudents.where((s) {
         final fullName = s.fullName.toLowerCase();
-        final login = s.login.toLowerCase();
-        final faculty = _resolveFacultyName(s).toLowerCase();
-        final group = _resolveGroupName(s).toLowerCase();
-        return fullName.contains(studentQuery) ||
-            login.contains(studentQuery) ||
-            faculty.contains(studentQuery) ||
-            group.contains(studentQuery);
+        return fullName.contains(studentQuery);
       }).toList();
       filteredStudents.sort((a, b) {
         final aName = a.fullName.toLowerCase();
         final bName = b.fullName.toLowerCase();
-        final aLogin = a.login.toLowerCase();
-        final bLogin = b.login.toLowerCase();
 
         int rank(User u) {
           final name = u.fullName.toLowerCase();
-          final login = u.login.toLowerCase();
           if (name.startsWith(studentQuery)) return 0;
           if (name.contains(studentQuery)) return 1;
-          if (login.startsWith(studentQuery)) return 2;
-          if (login.contains(studentQuery)) return 3;
           return 9;
         }
 
         final r = rank(a).compareTo(rank(b));
         if (r != 0) return r;
-        final n = aName.compareTo(bName);
-        if (n != 0) return n;
-        return aLogin.compareTo(bLogin);
+        return aName.compareTo(bName);
       });
     }
 
@@ -527,7 +531,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                     onChanged: (value) =>
                         setState(() => _studentSearchQuery = value),
                     decoration: const InputDecoration(
-                      labelText: "Поиск студентов (ФИО / логин)",
+                      labelText: "Поиск студентов по ФИО",
                       prefixIcon: Icon(Icons.search),
                     ),
                   ),
@@ -619,9 +623,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     final unselectedTabColor = isDark
         ? theme.colorScheme.onSurface.withOpacity(0.78)
         : theme.colorScheme.onSurfaceVariant;
-    return DefaultTabController(
-      length: 2,
-      child: NestedScrollView(
+    return NestedScrollView(
         headerSliverBuilder: (context, innerBoxIsScrolled) => [
           _buildSliverAppBar(
             "Журнал оценок",
@@ -630,6 +632,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
           ),
           SliverToBoxAdapter(
             child: TabBar(
+              controller: _journalTabController,
               indicatorColor: selectedTabColor,
               labelColor: selectedTabColor,
               unselectedLabelColor: unselectedTabColor,
@@ -643,12 +646,12 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
           ),
         ],
         body: TabBarView(
+          controller: _journalTabController,
           children: [
             _buildNewGradeForm(),
             _buildGradesHistory(),
           ],
         ),
-      ),
     );
   }
 
@@ -673,8 +676,9 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
               norms: _norms,
               faculties: _faculties,
               groups: _groups,
+              grades: _grades,
               teacherId: widget.user.id,
-              onGradeAdded: _loadData, // Reload data after adding grade
+              onGradeAdded: () => _loadData(showLoader: false),
             ),
           ),
         ),
@@ -736,12 +740,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
 
       final query = _historySearchQuery.trim().toLowerCase();
       if (query.isNotEmpty) {
-        final studentName = (student.fullName).toLowerCase();
-        final studentLogin = student.login.toLowerCase();
-        final normName = (normsById[g.normId]?.name ?? '').toLowerCase();
-        final comment = (g.comment ?? '').toLowerCase();
-        final haystack = '$studentName $studentLogin $normName $comment';
-        if (!haystack.contains(query)) return false;
+        if (!_studentSearchText(student).contains(query)) return false;
       }
       return true;
     }).toList();
@@ -751,16 +750,9 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
       int rank(Grade g) {
         final student = studentsById[g.studentId];
         if (student == null) return 9;
-        final name = student.fullName.toLowerCase();
-        final login = student.login.toLowerCase();
-        final norm = (normsById[g.normId]?.name ?? '').toLowerCase();
-        final comment = (g.comment ?? '').toLowerCase();
-        if (name.startsWith(query)) return 0;
-        if (name.contains(query)) return 1;
-        if (login.startsWith(query)) return 2;
-        if (login.contains(query)) return 3;
-        if (norm.contains(query)) return 4;
-        if (comment.contains(query)) return 5;
+        final studentSearchText = _studentSearchText(student);
+        if (studentSearchText.startsWith(query)) return 0;
+        if (studentSearchText.contains(query)) return 1;
         return 9;
       }
 
@@ -790,6 +782,33 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
               ),
               child: Column(
                 children: [
+                  TextField(
+                    controller: _historySearchController,
+                    onChanged: (value) =>
+                        setState(() => _historySearchQuery = value),
+                    decoration: const InputDecoration(
+                      labelText: "Поиск по ФИО студента",
+                      prefixIcon: Icon(Icons.search),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ExpansionTile(
+                    tilePadding: EdgeInsets.zero,
+                    childrenPadding: EdgeInsets.zero,
+                    initiallyExpanded: _historyFilterFacultyId != null ||
+                        _historyFilterGroupId != null ||
+                        _historyFilterStudentId != null ||
+                        _historyFilterNormId != null ||
+                        _historyFilterAcademicYear != null ||
+                        _historyFilterCourse != null ||
+                        _historyFilterSemester != null,
+                    leading: const Icon(Icons.tune),
+                    title: const Text("Фильтры"),
+                    subtitle: Text(
+                      "Факультет, группа, студент, норматив, год, курс, семестр",
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    children: [
                   DropdownButtonFormField<String>(
                     isExpanded: true,
                     value: _historyFilterFacultyId,
@@ -950,14 +969,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                     onChanged: (value) =>
                         setState(() => _historyFilterSemester = value),
                   ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    onChanged: (value) =>
-                        setState(() => _historySearchQuery = value),
-                    decoration: const InputDecoration(
-                      labelText: "Поиск (в приоритете студенты)",
-                      prefixIcon: Icon(Icons.search),
-                    ),
+                  const SizedBox(height: 4),
+                    ],
                   ),
                   const SizedBox(height: 12),
                   Row(
@@ -1461,14 +1474,16 @@ class _GradeForm extends StatefulWidget {
   final List<Norm> norms;
   final List<Faculty> faculties;
   final List<Group> groups;
+  final List<Grade> grades;
   final String teacherId;
-  final VoidCallback onGradeAdded;
+  final Future<void> Function() onGradeAdded;
 
   const _GradeForm({
     required this.students,
     required this.norms,
     required this.faculties,
     required this.groups,
+    required this.grades,
     required this.teacherId,
     required this.onGradeAdded,
   });
@@ -1477,16 +1492,20 @@ class _GradeForm extends StatefulWidget {
   State<_GradeForm> createState() => _GradeFormState();
 }
 
-class _GradeFormState extends State<_GradeForm> {
+class _GradeFormState extends State<_GradeForm>
+    with AutomaticKeepAliveClientMixin<_GradeForm> {
   String? _selectedFacultyId;
   String? _selectedGroupId;
   String? _selectedStudentId;
   String? _selectedNormId;
+  String _studentSearchQuery = '';
+  final TextEditingController _studentSearchController = TextEditingController();
   late String _selectedAcademicYear;
   final List<String> _customAcademicYears = <String>[];
   int _selectedCourse = 1;
   int _selectedSemester = 1;
   int _score = 5;
+  String? _existingGradeHint;
   final _commentController = TextEditingController();
 
   String _defaultAcademicYear() {
@@ -1659,7 +1678,56 @@ class _GradeFormState extends State<_GradeForm> {
   }
 
   @override
+  bool get wantKeepAlive => true;
+
+  @override
+  void dispose() {
+    _studentSearchController.dispose();
+    _commentController.dispose();
+    super.dispose();
+  }
+
+  Grade? _latestGradeForSelection() {
+    if (_selectedStudentId == null || _selectedNormId == null) return null;
+
+    final matches = widget.grades
+        .where((g) =>
+            g.studentId == _selectedStudentId && g.normId == _selectedNormId)
+        .toList()
+      ..sort((a, b) => b.date.compareTo(a.date));
+
+    return matches.isEmpty ? null : matches.first;
+  }
+
+  void _applyExistingGradeIfAny() {
+    final latestGrade = _latestGradeForSelection();
+    if (latestGrade == null) {
+      _existingGradeHint = null;
+      return;
+    }
+
+    final academicYear = latestGrade.academicYear.trim().isEmpty
+        ? _defaultAcademicYear()
+        : latestGrade.academicYear.trim();
+
+    if (!_customAcademicYears.contains(academicYear) &&
+        !_academicYearOptions().contains(academicYear)) {
+      _customAcademicYears.add(academicYear);
+      _saveCustomAcademicYears();
+    }
+
+    _selectedAcademicYear = academicYear;
+    _selectedCourse = latestGrade.course;
+    _selectedSemester = latestGrade.semester;
+    _score = latestGrade.score;
+    _commentController.text = latestGrade.comment ?? '';
+    _existingGradeHint =
+        'Найден уже проставленный результат: $academicYear, ${latestGrade.course} курс, ${latestGrade.semester} семестр, ${latestGrade.score} ${_getScoreSuffix(latestGrade.score)}. Можно только повысить балл.';
+  }
+
+  @override
   Widget build(BuildContext context) {
+    super.build(context);
     final selectedFacultyName = _selectedFacultyId == null
         ? null
         : widget.faculties
@@ -1673,6 +1741,7 @@ class _GradeFormState extends State<_GradeForm> {
                 orElse: () => Group(id: '', name: '', facultyId: ''))
             .name;
 
+    final studentQuery = _studentSearchQuery.trim().toLowerCase();
     final filteredStudents = widget.students.where((s) {
       final facultyMatched = _selectedFacultyId == null
           ? true
@@ -1688,6 +1757,8 @@ class _GradeFormState extends State<_GradeForm> {
                   s.group == selectedGroupName));
       if (!facultyMatched) return false;
       if (!groupMatched) return false;
+      if (studentQuery.isNotEmpty &&
+          !_studentSearchText(s).contains(studentQuery)) return false;
       return true;
     }).toList();
 
@@ -1700,62 +1771,123 @@ class _GradeFormState extends State<_GradeForm> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        DropdownButtonFormField<String>(
-          isExpanded: true,
-          value: _selectedFacultyId,
-          decoration: const InputDecoration(
-              labelText: "Факультет", prefixIcon: Icon(Icons.domain_outlined)),
-          items: [
-            const DropdownMenuItem<String>(
-                value: null, child: Text("Все факультеты")),
-            ...widget.faculties.map(
-              (f) => DropdownMenuItem(
-                value: f.id,
-                child: Text(
-                  f.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ),
-          ],
-          onChanged: (v) => setState(() {
-            _selectedFacultyId = v;
-            _selectedGroupId = null;
-            _selectedStudentId = null;
+        TextField(
+          controller: _studentSearchController,
+          onChanged: (value) => setState(() {
+            _studentSearchQuery = value;
+            final nextQuery = value.trim().toLowerCase();
+            if (_selectedStudentId != null) {
+              final stillVisible = widget.students.any((s) {
+                final facultyMatched = _selectedFacultyId == null
+                    ? true
+                    : ((s.facultyId != null &&
+                            s.facultyId == _selectedFacultyId) ||
+                        (selectedFacultyName != null &&
+                            selectedFacultyName.isNotEmpty &&
+                            s.faculty == selectedFacultyName));
+                final groupMatched = _selectedGroupId == null
+                    ? true
+                    : ((s.groupId != null && s.groupId == _selectedGroupId) ||
+                        (selectedGroupName != null &&
+                            selectedGroupName.isNotEmpty &&
+                            s.group == selectedGroupName));
+                return s.id == _selectedStudentId &&
+                    facultyMatched &&
+                    groupMatched &&
+                    (nextQuery.isEmpty ||
+                        _studentSearchText(s).contains(nextQuery));
+              });
+              if (!stillVisible) {
+                _selectedStudentId = null;
+                _existingGradeHint = null;
+              }
+            }
           }),
+          decoration: const InputDecoration(
+            labelText: "Поиск студента по ФИО",
+            prefixIcon: Icon(Icons.search),
+          ),
+        ),
+        const SizedBox(height: 12),
+        ExpansionTile(
+          tilePadding: EdgeInsets.zero,
+          childrenPadding: EdgeInsets.zero,
+          initiallyExpanded: _selectedFacultyId != null || _selectedGroupId != null,
+          leading: const Icon(Icons.tune),
+          title: const Text("Фильтры"),
+          subtitle: Text(
+            "Факультет и группа",
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          children: [
+            DropdownButtonFormField<String>(
+              isExpanded: true,
+              value: _selectedFacultyId,
+              decoration: const InputDecoration(
+                  labelText: "Факультет",
+                  prefixIcon: Icon(Icons.domain_outlined)),
+              items: [
+                const DropdownMenuItem<String>(
+                    value: null, child: Text("Все факультеты")),
+                ...widget.faculties.map(
+                  (f) => DropdownMenuItem(
+                    value: f.id,
+                    child: Text(
+                      f.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+              ],
+              onChanged: (v) => setState(() {
+                _selectedFacultyId = v;
+                _selectedGroupId = null;
+                _selectedStudentId = null;
+                _existingGradeHint = null;
+              }),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              isExpanded: true,
+              value: _selectedGroupId,
+              decoration: const InputDecoration(
+                  labelText: "Направление / группа",
+                  prefixIcon: Icon(Icons.groups_outlined)),
+              items: [
+                const DropdownMenuItem<String>(
+                    value: null, child: Text("Все направления")),
+                ...groupsForFaculty.map(
+                  (g) => DropdownMenuItem(
+                    value: g.id,
+                    child: Text(
+                      g.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+              ],
+              onChanged: (v) => setState(() {
+                _selectedGroupId = v;
+                _selectedStudentId = null;
+                _existingGradeHint = null;
+              }),
+            ),
+            const SizedBox(height: 4),
+          ],
         ),
         const SizedBox(height: 16),
         DropdownButtonFormField<String>(
           isExpanded: true,
-          value: _selectedGroupId,
+          value: filteredStudents.any((s) => s.id == _selectedStudentId)
+              ? _selectedStudentId
+              : null,
           decoration: const InputDecoration(
-              labelText: "Направление / группа",
-              prefixIcon: Icon(Icons.groups_outlined)),
-          items: [
-            const DropdownMenuItem<String>(
-                value: null, child: Text("Все направления")),
-            ...groupsForFaculty.map(
-              (g) => DropdownMenuItem(
-                value: g.id,
-                child: Text(
-                  g.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ),
-          ],
-          onChanged: (v) => setState(() {
-            _selectedGroupId = v;
-            _selectedStudentId = null;
-          }),
-        ),
-        const SizedBox(height: 16),
-        DropdownButtonFormField<String>(
-          isExpanded: true,
-          decoration: const InputDecoration(
-              labelText: "Студент", prefixIcon: Icon(Icons.person)),
+            labelText: "Студент",
+            helperText: "В списке показаны студенты по введенному ФИО",
+            prefixIcon: Icon(Icons.person),
+          ),
           items: filteredStudents
               .map(
                 (s) => DropdownMenuItem(
@@ -1768,11 +1900,17 @@ class _GradeFormState extends State<_GradeForm> {
                 ),
               )
               .toList(),
-          onChanged: (v) => setState(() => _selectedStudentId = v),
+          onChanged: (v) => setState(() {
+            _selectedStudentId = v;
+            _applyExistingGradeIfAny();
+          }),
         ),
         const SizedBox(height: 16),
         DropdownButtonFormField<String>(
           isExpanded: true,
+          value: widget.norms.any((n) => n.id == _selectedNormId)
+              ? _selectedNormId
+              : null,
           decoration: const InputDecoration(
               labelText: "Норматив", prefixIcon: Icon(Icons.rule)),
           items: widget.norms
@@ -1787,8 +1925,27 @@ class _GradeFormState extends State<_GradeForm> {
                 ),
               )
               .toList(),
-          onChanged: (v) => setState(() => _selectedNormId = v),
+          onChanged: (v) => setState(() {
+            _selectedNormId = v;
+            _applyExistingGradeIfAny();
+          }),
         ),
+        if (_existingGradeHint != null) ...[
+          const SizedBox(height: 12),
+          Card(
+            color: Theme.of(context).colorScheme.secondaryContainer,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text(
+                _existingGradeHint!,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSecondaryContainer,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+        ],
         const SizedBox(height: 16),
         DropdownButtonFormField<String>(
           isExpanded: true,
@@ -1951,16 +2108,11 @@ class _GradeFormState extends State<_GradeForm> {
         comment: _commentController.text,
       );
 
-      widget.onGradeAdded();
+      await widget.onGradeAdded();
       if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text("Оценка сохранена")));
-      setState(() {
-        _selectedStudentId = null;
-        _selectedNormId = null;
-        _score = 5;
-        _commentController.clear();
-      });
+      setState(() => _applyExistingGradeIfAny());
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
