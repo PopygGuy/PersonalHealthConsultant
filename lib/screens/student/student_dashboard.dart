@@ -116,37 +116,43 @@ class _StudentDashboardState extends State<StudentDashboard> {
 
   @override
   Widget build(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    final isCompactNav = width < 420;
     return Scaffold(
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _buildBody(),
       bottomNavigationBar: NavigationBar(
+        height: isCompactNav ? 72 : null,
+        labelBehavior: isCompactNav
+            ? NavigationDestinationLabelBehavior.onlyShowSelected
+            : NavigationDestinationLabelBehavior.alwaysShow,
         selectedIndex: _currentIndex,
         onDestinationSelected: _onDestinationSelected,
-        destinations: const [
+        destinations: [
           NavigationDestination(
-            icon: Icon(Icons.dashboard_outlined),
-            selectedIcon: Icon(Icons.dashboard),
-            label: 'Главная',
+            icon: const Icon(Icons.dashboard_outlined),
+            selectedIcon: const Icon(Icons.dashboard),
+            label: isCompactNav ? 'Главн.' : 'Главная',
           ),
           NavigationDestination(
-            icon: Icon(Icons.school_outlined),
-            selectedIcon: Icon(Icons.school),
+            icon: const Icon(Icons.school_outlined),
+            selectedIcon: const Icon(Icons.school),
             label: 'Журнал',
           ),
           NavigationDestination(
-            icon: Icon(Icons.favorite_outline),
-            selectedIcon: Icon(Icons.favorite),
-            label: 'Шагомер',
+            icon: const Icon(Icons.favorite_outline),
+            selectedIcon: const Icon(Icons.favorite),
+            label: isCompactNav ? 'Шаги' : 'Шагомер',
           ),
           NavigationDestination(
-            icon: Icon(Icons.monitor_heart_outlined),
-            selectedIcon: Icon(Icons.monitor_heart),
-            label: 'Здоровье',
+            icon: const Icon(Icons.monitor_heart_outlined),
+            selectedIcon: const Icon(Icons.monitor_heart),
+            label: isCompactNav ? 'Здор.' : 'Здоровье',
           ),
           NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
+            icon: const Icon(Icons.person_outline),
+            selectedIcon: const Icon(Icons.person),
             label: 'Профиль',
           ),
         ],
@@ -188,7 +194,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
   }) {
     final theme = Theme.of(context);
     final width = MediaQuery.sizeOf(context).width;
-    final subtitleFontSize = width < 360 ? 14.0 : (width < 600 ? 16.0 : 18.0);
+    final subtitleFontSize = width < 360 ? 12.0 : (width < 600 ? 14.0 : 16.0);
+    final subtitleHeight = width < 360 ? 76.0 : 72.0;
     return SliverAppBar.medium(
       title: Row(
         children: [
@@ -214,7 +221,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
       bottom: subtitle == null
           ? null
           : PreferredSize(
-              preferredSize: const Size.fromHeight(60),
+              preferredSize: Size.fromHeight(subtitleHeight),
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Padding(
@@ -236,6 +243,11 @@ class _StudentDashboardState extends State<StudentDashboard> {
 
   // --- TAB 1: Dashboard (Summary) ---
   Widget _buildDashboardTab() {
+    final width = MediaQuery.sizeOf(context).width;
+    final isCompact = width < 390;
+    final userNameParts = _currentUser.fullName.trim().split(RegExp(r'\s+'));
+    final firstName =
+        userNameParts.length > 1 ? userNameParts[1] : userNameParts.first;
     final recentGrades = [..._grades]..sort((a, b) => b.date.compareTo(a.date));
     final topRecentGrades = recentGrades.take(3).toList();
     double avgScore = 0;
@@ -247,9 +259,11 @@ class _StudentDashboardState extends State<StudentDashboard> {
     return CustomScrollView(
       slivers: [
         _buildSliverAppBar(
-          "Привет, ${_currentUser.fullName.split(' ')[0]}!",
+          "Привет, $firstName!",
           icon: Icons.dashboard_outlined,
-          subtitle: "Главная сводка по нормативам и активности",
+          subtitle: isCompact
+              ? "Сводка по нормативам и активности"
+              : "Главная сводка по нормативам и активности",
         ),
         SliverToBoxAdapter(
           child: ResponsiveWrapper(
@@ -259,30 +273,57 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   // Academic Summary
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _buildStatCard(
-                          context,
-                          title: "Средний балл (нормативы)",
-                          value:
-                              avgScore > 0 ? avgScore.toStringAsFixed(1) : "-",
-                          icon: Icons.school,
-                          color: Theme.of(context).colorScheme.primary,
+                  if (isCompact)
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildStatCard(
+                            context,
+                            title: "Средний балл",
+                            value: avgScore > 0 ? avgScore.toStringAsFixed(1) : "-",
+                            icon: Icons.school,
+                            color: Theme.of(context).colorScheme.primary,
+                            compact: true,
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _buildStatCard(
-                          context,
-                          title: "Сдано нормативов",
-                          value: _grades.length.toString(),
-                          icon: Icons.task_alt,
-                          color: Colors.green,
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _buildStatCard(
+                            context,
+                            title: "Сдано",
+                            value: _grades.length.toString(),
+                            icon: Icons.task_alt,
+                            color: Colors.green,
+                            compact: true,
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
+                      ],
+                    )
+                  else
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildStatCard(
+                            context,
+                            title: "Средний балл (нормативы)",
+                            value:
+                                avgScore > 0 ? avgScore.toStringAsFixed(1) : "-",
+                            icon: Icons.school,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _buildStatCard(
+                            context,
+                            title: "Сдано нормативов",
+                            value: _grades.length.toString(),
+                            icon: Icons.task_alt,
+                            color: Colors.green,
+                          ),
+                        ),
+                      ],
+                    ),
                   const SizedBox(height: 16),
                   _buildSummaryCard(
                     context,
@@ -342,27 +383,44 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   // Additional wellbeing module
                   _buildSummaryCard(
                     context,
-                    title: "Дополнительно: самочувствие",
+                    title:
+                        isCompact ? "Самочувствие" : "Дополнительно: самочувствие",
                     icon: Icons.favorite,
                     color: Theme.of(context).colorScheme.secondary,
                     content: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text("Как вы себя чувствуете сегодня?"),
+                        Text(
+                          "Как вы себя чувствуете сегодня?",
+                          style:
+                              Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                    height: 1.2,
+                                  ),
+                        ),
                         const SizedBox(height: 8),
                         Wrap(
                           spacing: 8,
+                          runSpacing: 8,
                           children: [
                             ActionChip(
-                              label: const Text("Отлично"),
+                              label: const Text(
+                                "Отлично",
+                                overflow: TextOverflow.ellipsis,
+                              ),
                               onPressed: () => _onMoodSelected("Отлично"),
                             ),
                             ActionChip(
-                              label: const Text("Нормально"),
+                              label: const Text(
+                                "Нормально",
+                                overflow: TextOverflow.ellipsis,
+                              ),
                               onPressed: () => _onMoodSelected("Нормально"),
                             ),
                             ActionChip(
-                              label: const Text("Устал"),
+                              label: const Text(
+                                "Устал",
+                                overflow: TextOverflow.ellipsis,
+                              ),
                               onPressed: () => _onMoodSelected("Устал"),
                             ),
                           ],
@@ -413,6 +471,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
 
   // --- TAB 2: Journal (Grades) ---
   Widget _buildJournalTab() {
+    final width = MediaQuery.sizeOf(context).width;
+    final isCompact = width < 390;
     final filteredGrades = _grades.where((g) {
       if (_journalFilterNormId != null && g.normId != _journalFilterNormId)
         return false;
@@ -498,10 +558,10 @@ class _StudentDashboardState extends State<StudentDashboard> {
                           setState(() => _journalFilterAcademicYear = value),
                     ),
                     const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: DropdownButtonFormField<int>(
+                    if (isCompact)
+                      Column(
+                        children: [
+                          DropdownButtonFormField<int>(
                             isExpanded: true,
                             value: _journalFilterCourse,
                             decoration: const InputDecoration(
@@ -511,26 +571,18 @@ class _StudentDashboardState extends State<StudentDashboard> {
                             items: const [
                               DropdownMenuItem<int>(
                                   value: null, child: Text("Все курсы")),
-                              DropdownMenuItem<int>(
-                                  value: 1, child: Text("1 курс")),
-                              DropdownMenuItem<int>(
-                                  value: 2, child: Text("2 курс")),
-                              DropdownMenuItem<int>(
-                                  value: 3, child: Text("3 курс")),
-                              DropdownMenuItem<int>(
-                                  value: 4, child: Text("4 курс")),
-                              DropdownMenuItem<int>(
-                                  value: 5, child: Text("5 курс")),
-                              DropdownMenuItem<int>(
-                                  value: 6, child: Text("6 курс")),
+                              DropdownMenuItem<int>(value: 1, child: Text("1 курс")),
+                              DropdownMenuItem<int>(value: 2, child: Text("2 курс")),
+                              DropdownMenuItem<int>(value: 3, child: Text("3 курс")),
+                              DropdownMenuItem<int>(value: 4, child: Text("4 курс")),
+                              DropdownMenuItem<int>(value: 5, child: Text("5 курс")),
+                              DropdownMenuItem<int>(value: 6, child: Text("6 курс")),
                             ],
                             onChanged: (value) =>
                                 setState(() => _journalFilterCourse = value),
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: DropdownButtonFormField<int>(
+                          const SizedBox(height: 12),
+                          DropdownButtonFormField<int>(
                             isExpanded: true,
                             value: _journalFilterSemester,
                             decoration: const InputDecoration(
@@ -540,17 +592,68 @@ class _StudentDashboardState extends State<StudentDashboard> {
                             items: const [
                               DropdownMenuItem<int>(
                                   value: null, child: Text("Все семестры")),
-                              DropdownMenuItem<int>(
-                                  value: 1, child: Text("1 семестр")),
-                              DropdownMenuItem<int>(
-                                  value: 2, child: Text("2 семестр")),
+                              DropdownMenuItem<int>(value: 1, child: Text("1 семестр")),
+                              DropdownMenuItem<int>(value: 2, child: Text("2 семестр")),
                             ],
                             onChanged: (value) =>
                                 setState(() => _journalFilterSemester = value),
                           ),
-                        ),
-                      ],
-                    ),
+                        ],
+                      )
+                    else
+                      Row(
+                        children: [
+                          Expanded(
+                            child: DropdownButtonFormField<int>(
+                              isExpanded: true,
+                              value: _journalFilterCourse,
+                              decoration: const InputDecoration(
+                                labelText: "Курс",
+                                prefixIcon: Icon(Icons.school_outlined),
+                              ),
+                              items: const [
+                                DropdownMenuItem<int>(
+                                    value: null, child: Text("Все курсы")),
+                                DropdownMenuItem<int>(
+                                    value: 1, child: Text("1 курс")),
+                                DropdownMenuItem<int>(
+                                    value: 2, child: Text("2 курс")),
+                                DropdownMenuItem<int>(
+                                    value: 3, child: Text("3 курс")),
+                                DropdownMenuItem<int>(
+                                    value: 4, child: Text("4 курс")),
+                                DropdownMenuItem<int>(
+                                    value: 5, child: Text("5 курс")),
+                                DropdownMenuItem<int>(
+                                    value: 6, child: Text("6 курс")),
+                              ],
+                              onChanged: (value) =>
+                                  setState(() => _journalFilterCourse = value),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: DropdownButtonFormField<int>(
+                              isExpanded: true,
+                              value: _journalFilterSemester,
+                              decoration: const InputDecoration(
+                                labelText: "Семестр",
+                                prefixIcon: Icon(Icons.event_note_outlined),
+                              ),
+                              items: const [
+                                DropdownMenuItem<int>(
+                                    value: null, child: Text("Все семестры")),
+                                DropdownMenuItem<int>(
+                                    value: 1, child: Text("1 семестр")),
+                                DropdownMenuItem<int>(
+                                    value: 2, child: Text("2 семестр")),
+                              ],
+                              onChanged: (value) => setState(
+                                  () => _journalFilterSemester = value),
+                            ),
+                          ),
+                        ],
+                      ),
                   ],
                 ),
               ),
@@ -749,9 +852,10 @@ class _StudentDashboardState extends State<StudentDashboard> {
       required IconData icon,
       required Color color,
       required Widget content}) {
+    final isCompact = MediaQuery.sizeOf(context).width < 390;
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.all(isCompact ? 12 : 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -759,9 +863,18 @@ class _StudentDashboardState extends State<StudentDashboard> {
               children: [
                 Icon(icon, color: color, size: 20),
                 const SizedBox(width: 8),
-                Text(title,
-                    style:
-                        TextStyle(fontWeight: FontWeight.bold, color: color)),
+                Expanded(
+                  child: Text(
+                    title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: color,
+                      fontSize: isCompact ? 16 : null,
+                    ),
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 12),
@@ -831,21 +944,30 @@ class _StudentDashboardState extends State<StudentDashboard> {
       {required String title,
       required String value,
       required IconData icon,
-      required Color color}) {
+      required Color color,
+      bool compact = false}) {
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.all(compact ? 12 : 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: color, size: 24),
-            const SizedBox(height: 12),
+            Icon(icon, color: color, size: compact ? 20 : 24),
+            SizedBox(height: compact ? 8 : 12),
             Text(value,
-                style: Theme.of(context)
-                    .textTheme
-                    .headlineMedium
-                    ?.copyWith(fontWeight: FontWeight.bold)),
-            Text(title, style: Theme.of(context).textTheme.bodySmall),
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      fontSize: compact ? 18 : null,
+                    )),
+            Text(
+              title,
+              maxLines: compact ? 2 : 3,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    fontSize: compact ? 12 : null,
+                  ),
+            ),
           ],
         ),
       ),

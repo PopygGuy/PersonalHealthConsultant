@@ -4,10 +4,15 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from datetime import timedelta
+import logging
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
+import time
 from .database import get_db
 from . import models, schemas, auth
 from .config import settings
 from .routers import structures, users, norms, grades, steps, maintenance
+from .audit import audit_logger, resolve_actor_from_request, log_event
 
 app = FastAPI(
     title="PersonalHealthConsultant.API",
@@ -33,6 +38,39 @@ app.include_router(norms.router, tags=["norms"])
 app.include_router(grades.router, tags=["grades"])
 app.include_router(steps.router, tags=["steps"])
 app.include_router(maintenance.router, tags=["maintenance"])
+
+def _configure_audit_logging() -> None:
+    backend_root = Path(__file__).resolve().parents[1]
+    logs_dir = backend_root / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    audit_file = logs_dir / "audit.log"
+
+    audit_logger.setLevel(logging.INFO)
+    audit_logger.propagate = False
+    if audit_logger.handlers:
+        return
+
+    formatter = logging.Formatter(
+        fmt="%(asctime)s | %(levelname)s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    file_handler = RotatingFileHandler(
+        audit_file,
+        maxBytes=2 * 1024 * 1024,
+        backupCount=5,
+        encoding="utf-8",
+    )
+    file_handler.setFormatter(formatter)
+
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+
+    audit_logger.addHandler(file_handler)
+    audit_logger.addHandler(console_handler)
+
+
+_configure_audit_logging()
 
 
 def _is_local_request(request: Request) -> bool:
@@ -64,11 +102,56 @@ async def login_for_access_token(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Login for root is allowed only from the server device",
         )
+    client_ip = request.client.host if request.client else "unknown"
+    log_event(
+        "login_success",
+        login=user.login,
+        role=user.role.value,
+        ip=client_ip,
+    )
     access_token_expires = timedelta(minutes=auth.settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = auth.create_access_token(
         data={"sub": user.login, "role": user.role.value}, expires_delta=access_token_expires
     )
     return {"access_token": access_token, "token_type": "bearer", "role": user.role.value, "id": user.id, "full_name": user.full_name}
+
+
+@app.post("/auth/logout")
+def logout_audit(
+    request: Request,
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    client_ip = request.client.host if request.client else "unknown"
+    log_event(
+        "logout_success",
+        login=current_user.login,
+        role=current_user.role.value,
+        ip=client_ip,
+    )
+    return {"ok": True}
+
+
+@app.middleware("http")
+async def audit_http_requests(request: Request, call_next):
+    started = time.time()
+    response = await call_next(request)
+
+    method = request.method.upper()
+    if method in {"GET", "POST", "PUT", "DELETE"}:
+        login, role = resolve_actor_from_request(request)
+        client_ip = request.client.host if request.client else "unknown"
+        duration_ms = int((time.time() - started) * 1000)
+        log_event(
+            "http_request",
+            method=method,
+            path=request.url.path,
+            status=response.status_code,
+            login=login,
+            role=role,
+            ip=client_ip,
+            duration_ms=duration_ms,
+        )
+    return response
 
 @app.get("/")
 def read_root():

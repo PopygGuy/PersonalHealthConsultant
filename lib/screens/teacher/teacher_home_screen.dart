@@ -53,6 +53,23 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
   String _historySearchQuery = '';
   final TextEditingController _historySearchController = TextEditingController();
   DateTime? _journalVisibleFrom;
+  bool _showOnlyActiveNorms = true;
+
+  Widget _filterLabel(String text) {
+    final theme = Theme.of(context);
+    return Text(
+      text,
+      style: theme.textTheme.labelLarge?.copyWith(
+            fontWeight: FontWeight.w700,
+            color: theme.colorScheme.primary,
+            letterSpacing: 0.2,
+          ) ??
+          TextStyle(
+            fontWeight: FontWeight.w700,
+            color: theme.colorScheme.primary,
+          ),
+    );
+  }
 
   String _defaultAcademicYear() {
     final now = DateTime.now();
@@ -170,33 +187,39 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
 
   @override
   Widget build(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    final isCompactNav = width < 420;
     return Scaffold(
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _buildBody(),
       floatingActionButton: _buildFab(),
       bottomNavigationBar: NavigationBar(
+        height: isCompactNav ? 72 : null,
+        labelBehavior: isCompactNav
+            ? NavigationDestinationLabelBehavior.onlyShowSelected
+            : NavigationDestinationLabelBehavior.alwaysShow,
         selectedIndex: _currentIndex,
         onDestinationSelected: (index) => setState(() => _currentIndex = index),
-        destinations: const [
+        destinations: [
           NavigationDestination(
-            icon: Icon(Icons.people_outline),
-            selectedIcon: Icon(Icons.people),
-            label: 'Студенты',
+            icon: const Icon(Icons.people_outline),
+            selectedIcon: const Icon(Icons.people),
+            label: isCompactNav ? 'Студ.' : 'Студенты',
           ),
           NavigationDestination(
-            icon: Icon(Icons.grade_outlined),
-            selectedIcon: Icon(Icons.grade),
+            icon: const Icon(Icons.grade_outlined),
+            selectedIcon: const Icon(Icons.grade),
             label: 'Журнал',
           ),
           NavigationDestination(
-            icon: Icon(Icons.rule_outlined),
-            selectedIcon: Icon(Icons.rule),
-            label: 'Нормативы',
+            icon: const Icon(Icons.rule_outlined),
+            selectedIcon: const Icon(Icons.rule),
+            label: isCompactNav ? 'Норм.' : 'Нормативы',
           ),
           NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
+            icon: const Icon(Icons.person_outline),
+            selectedIcon: const Icon(Icons.person),
             label: 'Профиль',
           ),
         ],
@@ -286,7 +309,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
   }) {
     final theme = Theme.of(context);
     final width = MediaQuery.sizeOf(context).width;
-    final subtitleFontSize = width < 360 ? 14.0 : (width < 600 ? 16.0 : 18.0);
+    final subtitleFontSize = width < 360 ? 12.0 : (width < 600 ? 14.0 : 16.0);
+    final subtitleHeight = width < 360 ? 76.0 : 72.0;
     return SliverAppBar.medium(
       title: Row(
         children: [
@@ -312,7 +336,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
       bottom: subtitle == null
           ? null
           : PreferredSize(
-              preferredSize: const Size.fromHeight(60),
+              preferredSize: Size.fromHeight(subtitleHeight),
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Padding(
@@ -335,7 +359,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
   Widget _buildProfileTab() {
     final myGradesCount =
         _grades.where((g) => g.teacherId == widget.user.id).length;
-    final normsCount = _norms.length;
     final studentsCount = _students.length;
 
     return CustomScrollView(
@@ -375,7 +398,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                       runSpacing: 8,
                       children: [
                         Chip(label: Text("Оценок выставлено: $myGradesCount")),
-                        Chip(label: Text("Доступно нормативов: $normsCount")),
                         Chip(label: Text("Студентов: $studentsCount")),
                       ],
                     ),
@@ -478,11 +500,12 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                   const Text("Фильтрация",
                       style: TextStyle(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 12),
+                  _filterLabel("Факультет"),
+                  const SizedBox(height: 6),
                   DropdownButtonFormField<String>(
                     isExpanded: true,
                     value: _filterFacultyId,
                     decoration: const InputDecoration(
-                      labelText: "Факультет",
                       prefixIcon: Icon(Icons.domain_outlined),
                     ),
                     items: [
@@ -506,7 +529,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                     isExpanded: true,
                     value: _filterGroupId,
                     decoration: const InputDecoration(
-                      labelText: "Направление / группа",
                       prefixIcon: Icon(Icons.groups_outlined),
                     ),
                     items: [
@@ -656,11 +678,13 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
   }
 
   Widget _buildNewGradeForm() {
+    final activeNorms = _norms.where((n) => n.isActive).toList();
     if (_students.isEmpty)
       return const Center(child: Text("Нет студентов для оценки"));
-    if (_norms.isEmpty)
+    if (activeNorms.isEmpty)
       return const Center(
-          child: Text("Сначала создайте нормативы во вкладке 'Нормативы'"));
+          child:
+              Text("Нет активных нормативов. Разблокируйте их во вкладке 'Нормативы'"));
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -673,7 +697,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
             padding: const EdgeInsets.all(24),
             child: _GradeForm(
               students: _students,
-              norms: _norms,
+              norms: activeNorms,
               faculties: _faculties,
               groups: _groups,
               grades: _grades,
@@ -809,11 +833,12 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                     children: [
+                  _filterLabel("Факультет"),
+                  const SizedBox(height: 6),
                   DropdownButtonFormField<String>(
                     isExpanded: true,
                     value: _historyFilterFacultyId,
                     decoration: const InputDecoration(
-                        labelText: "Факультет",
                         prefixIcon: Icon(Icons.domain_outlined)),
                     items: [
                       const DropdownMenuItem<String>(
@@ -836,11 +861,12 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                     }),
                   ),
                   const SizedBox(height: 12),
+                  _filterLabel("Направление / группа"),
+                  const SizedBox(height: 6),
                   DropdownButtonFormField<String>(
                     isExpanded: true,
                     value: _historyFilterGroupId,
                     decoration: const InputDecoration(
-                        labelText: "Направление / группа",
                         prefixIcon: Icon(Icons.groups_outlined)),
                     items: [
                       const DropdownMenuItem<String>(
@@ -866,11 +892,12 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                     }),
                   ),
                   const SizedBox(height: 12),
+                  _filterLabel("Студент"),
+                  const SizedBox(height: 6),
                   DropdownButtonFormField<String>(
                     isExpanded: true,
                     value: _historyFilterStudentId,
                     decoration: const InputDecoration(
-                        labelText: "Студент",
                         prefixIcon: Icon(Icons.person_outline)),
                     items: [
                       const DropdownMenuItem<String>(
@@ -890,11 +917,12 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                         setState(() => _historyFilterStudentId = value),
                   ),
                   const SizedBox(height: 12),
+                  _filterLabel("Норматив"),
+                  const SizedBox(height: 6),
                   DropdownButtonFormField<String>(
                     isExpanded: true,
                     value: _historyFilterNormId,
                     decoration: const InputDecoration(
-                        labelText: "Норматив",
                         prefixIcon: Icon(Icons.rule_outlined)),
                     items: [
                       const DropdownMenuItem<String>(
@@ -914,11 +942,12 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                         setState(() => _historyFilterNormId = value),
                   ),
                   const SizedBox(height: 12),
+                  _filterLabel("Учебный год"),
+                  const SizedBox(height: 6),
                   DropdownButtonFormField<String>(
                     isExpanded: true,
                     value: _historyFilterAcademicYear,
                     decoration: const InputDecoration(
-                        labelText: "Учебный год",
                         prefixIcon: Icon(Icons.calendar_today_outlined)),
                     items: [
                       const DropdownMenuItem<String>(
@@ -934,11 +963,12 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                         setState(() => _historyFilterAcademicYear = value),
                   ),
                   const SizedBox(height: 12),
+                  _filterLabel("Курс"),
+                  const SizedBox(height: 6),
                   DropdownButtonFormField<int>(
                     isExpanded: true,
                     value: _historyFilterCourse,
                     decoration: const InputDecoration(
-                        labelText: "Курс",
                         prefixIcon: Icon(Icons.school_outlined)),
                     items: const [
                       DropdownMenuItem<int>(
@@ -954,11 +984,12 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                         setState(() => _historyFilterCourse = value),
                   ),
                   const SizedBox(height: 12),
+                  _filterLabel("Семестр"),
+                  const SizedBox(height: 6),
                   DropdownButtonFormField<int>(
                     isExpanded: true,
                     value: _historyFilterSemester,
                     decoration: const InputDecoration(
-                        labelText: "Семестр",
                         prefixIcon: Icon(Icons.event_note_outlined)),
                     items: const [
                       DropdownMenuItem<int>(
@@ -1322,6 +1353,12 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
 
   // --- TAB 3: Norms Management ---
   Widget _buildNormsTab() {
+    final visibleNorms = _showOnlyActiveNorms
+        ? _norms.where((n) => n.isActive).toList()
+        : _norms.where((n) => !n.isActive).toList();
+    final activeCount = _norms.where((n) => n.isActive).length;
+    final blockedCount = _norms.length - activeCount;
+
     return CustomScrollView(
       slivers: [
         _buildSliverAppBar(
@@ -1329,42 +1366,153 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
           icon: Icons.rule_outlined,
           subtitle: "Актуальный перечень нормативов для оценки",
         ),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                ChoiceChip(
+                  label: Text("Доступные ($activeCount)"),
+                  selected: _showOnlyActiveNorms,
+                  onSelected: (_) => setState(() => _showOnlyActiveNorms = true),
+                ),
+                ChoiceChip(
+                  label: Text("Недоступные ($blockedCount)"),
+                  selected: !_showOnlyActiveNorms,
+                  onSelected: (_) => setState(() => _showOnlyActiveNorms = false),
+                ),
+              ],
+            ),
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Text(
+              _showOnlyActiveNorms
+                  ? "Показаны: доступные"
+                  : "Показаны: недоступные",
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+          ),
+        ),
         if (_norms.isEmpty)
           const SliverFillRemaining(
               child: Center(child: Text("Список нормативов пуст"))),
+        if (_norms.isNotEmpty && visibleNorms.isEmpty)
+          SliverFillRemaining(
+            child: Center(
+              child: Text(
+                _showOnlyActiveNorms
+                    ? "Нет доступных нормативов"
+                    : "Нет недоступных нормативов",
+              ),
+            ),
+          ),
         SliverPadding(
           padding: const EdgeInsets.all(16),
           sliver: SliverList(
             delegate: SliverChildBuilderDelegate(
               (context, index) {
-                final n = _norms[index];
+                final n = visibleNorms[index];
                 return Card(
-                  child: ListTile(
-                    leading: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.primaryContainer,
-                          shape: BoxShape.circle),
-                      child: Icon(Icons.fitness_center,
-                          color:
-                              Theme.of(context).colorScheme.onPrimaryContainer,
-                          size: 20),
-                    ),
-                    title: Text(n.name,
-                        style: const TextStyle(fontWeight: FontWeight.w600)),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete_outline, color: Colors.red),
-                      onPressed: () async {
-                        final shouldDelete = await _confirmDeleteNorm(n.name);
-                        if (!shouldDelete) return;
-                        await _api.deleteNorm(n.id);
-                        _loadData();
-                      },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          margin: const EdgeInsets.only(top: 2),
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.primaryContainer,
+                              shape: BoxShape.circle),
+                          child: Icon(Icons.fitness_center,
+                              color:
+                                  Theme.of(context).colorScheme.onPrimaryContainer,
+                              size: 20),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                n.name,
+                                style: const TextStyle(fontWeight: FontWeight.w600),
+                                softWrap: true,
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                n.isActive ? "Активен" : "Заблокирован",
+                                style: TextStyle(
+                                  color: n.isActive
+                                      ? Colors.green
+                                      : Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              tooltip:
+                                  n.isActive ? "Заблокировать" : "Разблокировать",
+                              icon: Icon(
+                                n.isActive ? Icons.lock_outline : Icons.lock_open,
+                                color: n.isActive
+                                    ? Theme.of(context).colorScheme.onSurfaceVariant
+                                    : Colors.green,
+                              ),
+                              onPressed: () async {
+                                try {
+                                  await _api.updateNormStatus(n.id, !n.isActive);
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        !n.isActive
+                                            ? 'Норматив "${n.name}" разблокирован'
+                                            : 'Норматив "${n.name}" заблокирован',
+                                      ),
+                                    ),
+                                  );
+                                  _loadData(showLoader: false);
+                                } catch (e) {
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text("Ошибка: $e")),
+                                  );
+                                }
+                              },
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline, color: Colors.red),
+                              onPressed: () async {
+                                final shouldDelete = await _confirmDeleteNorm(n.name);
+                                if (!shouldDelete) return;
+                                await _api.deleteNorm(n.id);
+                                _loadData(showLoader: false);
+                              },
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
                 );
               },
-              childCount: _norms.length,
+              childCount: visibleNorms.length,
             ),
           ),
         ),
@@ -1507,6 +1655,22 @@ class _GradeFormState extends State<_GradeForm>
   int _score = 5;
   String? _existingGradeHint;
   final _commentController = TextEditingController();
+
+  Widget _filterLabel(String text) {
+    final theme = Theme.of(context);
+    return Text(
+      text,
+      style: theme.textTheme.labelLarge?.copyWith(
+            fontWeight: FontWeight.w700,
+            color: theme.colorScheme.primary,
+            letterSpacing: 0.2,
+          ) ??
+          TextStyle(
+            fontWeight: FontWeight.w700,
+            color: theme.colorScheme.primary,
+          ),
+    );
+  }
 
   String _defaultAcademicYear() {
     final now = DateTime.now();
@@ -1820,11 +1984,12 @@ class _GradeFormState extends State<_GradeForm>
             style: Theme.of(context).textTheme.bodySmall,
           ),
           children: [
+            _filterLabel("Факультет"),
+            const SizedBox(height: 6),
             DropdownButtonFormField<String>(
               isExpanded: true,
               value: _selectedFacultyId,
               decoration: const InputDecoration(
-                  labelText: "Факультет",
                   prefixIcon: Icon(Icons.domain_outlined)),
               items: [
                 const DropdownMenuItem<String>(
@@ -1848,11 +2013,12 @@ class _GradeFormState extends State<_GradeForm>
               }),
             ),
             const SizedBox(height: 12),
+            _filterLabel("Направление / группа"),
+            const SizedBox(height: 6),
             DropdownButtonFormField<String>(
               isExpanded: true,
               value: _selectedGroupId,
               decoration: const InputDecoration(
-                  labelText: "Направление / группа",
                   prefixIcon: Icon(Icons.groups_outlined)),
               items: [
                 const DropdownMenuItem<String>(

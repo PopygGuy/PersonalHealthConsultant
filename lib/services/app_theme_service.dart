@@ -8,7 +8,7 @@ class AppThemeService {
   AppThemeService._internal();
 
   final ValueNotifier<ThemeMode> themeModeNotifier =
-      ValueNotifier<ThemeMode>(ThemeMode.light);
+      ValueNotifier<ThemeMode>(ThemeMode.system);
 
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -28,8 +28,10 @@ class AppThemeService {
         return ThemeMode.light;
       case 'dark':
         return ThemeMode.dark;
+      case 'system':
+        return ThemeMode.system;
       default:
-        return ThemeMode.light;
+        return ThemeMode.system;
     }
   }
 

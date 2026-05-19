@@ -5,6 +5,7 @@ from sqlalchemy import inspect, text
 from ..database import get_db
 from .. import models, schemas, auth
 from datetime import datetime
+from ..audit import log_event
 
 router = APIRouter()
 
@@ -25,12 +26,21 @@ def _ensure_grade_period_columns(db: Session) -> None:
         db.execute(text("ALTER TABLE grades ADD COLUMN semester INTEGER NOT NULL DEFAULT 1"))
     db.commit()
 
+
+def _ensure_norm_status_column(db: Session) -> None:
+    inspector = inspect(db.bind)
+    columns = {c["name"] for c in inspector.get_columns("norms")}
+    if "is_active" not in columns:
+        db.execute(text("ALTER TABLE norms ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1"))
+        db.commit()
+
 @router.post("/grades", response_model=schemas.Grade)
 def create_grade(grade: schemas.GradeCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     if current_user.role != models.UserRole.teacher:
          raise HTTPException(status_code=403, detail="Not authorized")
 
     _ensure_grade_period_columns(db)
+    _ensure_norm_status_column(db)
 
     if grade.course < 1 or grade.course > 6:
         raise HTTPException(status_code=400, detail="Курс должен быть от 1 до 6")
@@ -40,6 +50,12 @@ def create_grade(grade: schemas.GradeCreate, db: Session = Depends(get_db), curr
         raise HTTPException(status_code=400, detail="Оценка должна быть от 1 до 5")
     now = datetime.utcnow()
     academic_year = (grade.academic_year or "").strip() or _default_academic_year(now)
+
+    norm = db.query(models.Norm).filter(models.Norm.id == grade.norm_id).first()
+    if norm is None:
+        raise HTTPException(status_code=404, detail="Норматив не найден")
+    if not bool(norm.is_active):
+        raise HTTPException(status_code=400, detail="Норматив заблокирован и недоступен для оценки")
 
     higher_existing = db.query(models.Grade).filter(
         models.Grade.student_id == grade.student_id,
@@ -87,6 +103,17 @@ def create_grade(grade: schemas.GradeCreate, db: Session = Depends(get_db), curr
         existing.teacher_id = current_user.id
         db.commit()
         db.refresh(existing)
+        log_event(
+            "grade_updated",
+            actor=current_user.login,
+            grade_id=existing.id,
+            student_id=existing.student_id,
+            norm_id=existing.norm_id,
+            score=existing.score,
+            academic_year=existing.academic_year,
+            course=existing.course,
+            semester=existing.semester,
+        )
         return existing
 
     db_grade = models.Grade(
@@ -104,6 +131,17 @@ def create_grade(grade: schemas.GradeCreate, db: Session = Depends(get_db), curr
     db.add(db_grade)
     db.commit()
     db.refresh(db_grade)
+    log_event(
+        "grade_created",
+        actor=current_user.login,
+        grade_id=db_grade.id,
+        student_id=db_grade.student_id,
+        norm_id=db_grade.norm_id,
+        score=db_grade.score,
+        academic_year=db_grade.academic_year,
+        course=db_grade.course,
+        semester=db_grade.semester,
+    )
     return db_grade
 
 @router.get("/grades", response_model=List[schemas.Grade])

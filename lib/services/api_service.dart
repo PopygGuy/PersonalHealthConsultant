@@ -77,6 +77,9 @@ class ApiService {
   }
 
   Future<User?> getMe() async {
+    if (_token == null || _token!.trim().isEmpty) {
+      return null;
+    }
     try {
       final response = await get('/users/me');
       if (response.statusCode == 200) {
@@ -139,6 +142,13 @@ class ApiService {
   }
 
   Future<void> logout() async {
+    if (_token != null) {
+      try {
+        await post('/auth/logout', {});
+      } catch (e) {
+        print('logout audit error: $e');
+      }
+    }
     _token = null;
     _currentUser = null;
     await _storage.delete(key: _jwtTokenKey);
@@ -146,25 +156,35 @@ class ApiService {
 
   // Helper for authenticated requests
   Future<Response> get(String path) async {
-    return _dio.get(path,
-        options: Options(headers: {'Authorization': 'Bearer $_token'}));
+    final headers = <String, dynamic>{};
+    if (_token != null && _token!.trim().isNotEmpty) {
+      headers['Authorization'] = 'Bearer $_token';
+    }
+    return _dio.get(path, options: Options(headers: headers));
   }
 
   Future<Response> post(String path, dynamic data) async {
-    return _dio.post(path,
-        data: data,
-        options: Options(headers: {'Authorization': 'Bearer $_token'}));
+    final headers = <String, dynamic>{};
+    if (_token != null && _token!.trim().isNotEmpty) {
+      headers['Authorization'] = 'Bearer $_token';
+    }
+    return _dio.post(path, data: data, options: Options(headers: headers));
   }
 
   Future<Response> put(String path, dynamic data) async {
-    return _dio.put(path,
-        data: data,
-        options: Options(headers: {'Authorization': 'Bearer $_token'}));
+    final headers = <String, dynamic>{};
+    if (_token != null && _token!.trim().isNotEmpty) {
+      headers['Authorization'] = 'Bearer $_token';
+    }
+    return _dio.put(path, data: data, options: Options(headers: headers));
   }
 
   Future<Response> delete(String path) async {
-    return _dio.delete(path,
-        options: Options(headers: {'Authorization': 'Bearer $_token'}));
+    final headers = <String, dynamic>{};
+    if (_token != null && _token!.trim().isNotEmpty) {
+      headers['Authorization'] = 'Bearer $_token';
+    }
+    return _dio.delete(path, options: Options(headers: headers));
   }
 
   // --- Admin API ---
@@ -373,6 +393,23 @@ class ApiService {
     } catch (e) {
       print('deleteNorm error: $e');
       return false;
+    }
+  }
+
+  Future<Norm?> updateNormStatus(String id, bool isActive) async {
+    try {
+      final response =
+          await put('/norms/$id/status', {'is_active': isActive});
+      return Norm.fromJson(response.data);
+    } on DioException catch (e) {
+      final detail = e.response?.data is Map<String, dynamic>
+          ? (e.response?.data['detail']?.toString() ??
+              'Ошибка изменения статуса норматива')
+          : 'Ошибка изменения статуса норматива';
+      throw Exception(detail);
+    } catch (e) {
+      print('updateNormStatus error: $e');
+      throw Exception('Ошибка изменения статуса норматива');
     }
   }
 

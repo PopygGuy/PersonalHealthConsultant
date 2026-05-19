@@ -48,8 +48,13 @@ class NormBase(BaseModel):
 
 class Norm(NormBase):
     id: str
+    is_active: bool = True
     class Config:
         from_attributes = True
+
+
+class NormStatusUpdate(BaseModel):
+    is_active: bool
 
 class GradeBase(BaseModel):
     student_id: str

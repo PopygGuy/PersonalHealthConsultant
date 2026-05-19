@@ -4,6 +4,7 @@ from sqlalchemy.exc import IntegrityError
 from typing import List
 from ..database import get_db
 from .. import models, schemas, auth
+from ..audit import log_event
 
 router = APIRouter()
 
@@ -27,6 +28,12 @@ def create_faculty(faculty: schemas.FacultyBase, db: Session = Depends(get_db), 
     try:
         db.commit()
         db.refresh(db_faculty)
+        log_event(
+            "faculty_created",
+            actor=current_user.login,
+            faculty_id=db_faculty.id,
+            faculty_name=db_faculty.name,
+        )
         return db_faculty
     except IntegrityError:
         db.rollback()
@@ -36,8 +43,17 @@ def create_faculty(faculty: schemas.FacultyBase, db: Session = Depends(get_db), 
 def delete_faculty(faculty_id: str, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     if current_user.role != models.UserRole.admin:
         raise HTTPException(status_code=403, detail="Not authorized")
-    db.query(models.Faculty).filter(models.Faculty.id == faculty_id).delete()
+    db_faculty = db.query(models.Faculty).filter(models.Faculty.id == faculty_id).first()
+    if db_faculty is None:
+        raise HTTPException(status_code=404, detail="Факультет не найден")
+    db.delete(db_faculty)
     db.commit()
+    log_event(
+        "faculty_deleted",
+        actor=current_user.login,
+        faculty_id=faculty_id,
+        faculty_name=db_faculty.name,
+    )
     return {"ok": True}
 
 @router.get("/groups", response_model=List[schemas.Group])
@@ -65,6 +81,13 @@ def create_group(group: schemas.GroupBase, db: Session = Depends(get_db), curren
     try:
         db.commit()
         db.refresh(db_group)
+        log_event(
+            "group_created",
+            actor=current_user.login,
+            group_id=db_group.id,
+            group_name=db_group.name,
+            faculty_id=db_group.faculty_id,
+        )
         return db_group
     except IntegrityError:
         db.rollback()
@@ -74,6 +97,15 @@ def create_group(group: schemas.GroupBase, db: Session = Depends(get_db), curren
 def delete_group(group_id: str, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     if current_user.role != models.UserRole.admin:
         raise HTTPException(status_code=403, detail="Not authorized")
-    db.query(models.Group).filter(models.Group.id == group_id).delete()
+    db_group = db.query(models.Group).filter(models.Group.id == group_id).first()
+    if db_group is None:
+        raise HTTPException(status_code=404, detail="Группа не найдена")
+    db.delete(db_group)
     db.commit()
+    log_event(
+        "group_deleted",
+        actor=current_user.login,
+        group_id=group_id,
+        group_name=db_group.name,
+    )
     return {"ok": True}

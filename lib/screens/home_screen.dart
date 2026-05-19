@@ -69,6 +69,8 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final ui = _uiScale(context);
+    final width = MediaQuery.sizeOf(context).width;
+    final isCompact = width < 390;
 
     return Scaffold(
       body: CustomScrollView(
@@ -173,10 +175,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       SizedBox(height: 24 * ui),
                       _buildSectionTitle("Параметры тела"),
                       SizedBox(height: 12 * ui),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _buildInput(
+                      if (isCompact)
+                        Column(
+                          children: [
+                            _buildInput(
                                 controller: _ageController,
                                 label: "Возраст",
                                 suffix: "лет",
@@ -189,10 +191,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                     return '17-50 лет';
                                   return null;
                                 }),
-                          ),
-                          SizedBox(width: 12 * ui),
-                          Expanded(
-                            child: _buildInput(
+                            SizedBox(height: 12 * ui),
+                            _buildInput(
                                 controller: _weightController,
                                 label: "Вес",
                                 suffix: "кг",
@@ -205,9 +205,44 @@ class _HomeScreenState extends State<HomeScreen> {
                                     return '20-300 кг';
                                   return null;
                                 }),
-                          ),
-                        ],
-                      ),
+                          ],
+                        )
+                      else
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildInput(
+                                  controller: _ageController,
+                                  label: "Возраст",
+                                  suffix: "лет",
+                                  icon: Icons.cake,
+                                  validator: (v) {
+                                    if (v == null || v.isEmpty)
+                                      return 'Введите возраст';
+                                    int? val = int.tryParse(v);
+                                    if (val == null || val < 17 || val > 50)
+                                      return '17-50 лет';
+                                    return null;
+                                  }),
+                            ),
+                            SizedBox(width: 12 * ui),
+                            Expanded(
+                              child: _buildInput(
+                                  controller: _weightController,
+                                  label: "Вес",
+                                  suffix: "кг",
+                                  icon: Icons.scale,
+                                  validator: (v) {
+                                    if (v == null || v.isEmpty)
+                                      return 'Введите вес';
+                                    double? val = double.tryParse(v);
+                                    if (val == null || val < 20 || val > 300)
+                                      return '20-300 кг';
+                                    return null;
+                                  }),
+                            ),
+                          ],
+                        ),
                       SizedBox(height: 12 * ui),
                       _buildInput(
                           controller: _heightController,
@@ -236,18 +271,32 @@ class _HomeScreenState extends State<HomeScreen> {
                             value: level,
                             child: Text(
                               _getActivityLabel(level),
-                              overflow: TextOverflow.visible, // Allow wrap
+                              overflow: TextOverflow.ellipsis,
                               maxLines: 2,
                               style: TextStyle(fontSize: 14 * ui),
                             ),
                           );
                         }).toList(),
                         onChanged: (v) => setState(() => _activityLevel = v!),
+                        selectedItemBuilder: (context) {
+                          return ActivityLevel.values.map((level) {
+                            return Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                _getActivityLabel(level),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(fontSize: 14 * ui),
+                              ),
+                            );
+                          }).toList();
+                        },
                       ),
                       SizedBox(height: 24 * ui),
                       _buildSectionTitle("Цель"),
                       SizedBox(height: 12 * ui),
                       SegmentedButton<HealthGoal>(
+                        showSelectedIcon: !isCompact,
                         segments: [
                           ButtonSegment(
                             value: HealthGoal.loseWeight,
@@ -275,6 +324,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ],
                         selected: {_goal},
+                        expandedInsets: EdgeInsets.zero,
                         onSelectionChanged: (Set<HealthGoal> newSelection) {
                           setState(() {
                             _goal = newSelection.first;

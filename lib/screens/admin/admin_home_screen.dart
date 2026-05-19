@@ -230,7 +230,8 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   }) {
     final theme = Theme.of(context);
     final width = MediaQuery.sizeOf(context).width;
-    final subtitleFontSize = width < 360 ? 14.0 : (width < 600 ? 16.0 : 18.0);
+    final subtitleFontSize = width < 360 ? 12.0 : (width < 600 ? 14.0 : 16.0);
+    final subtitleHeight = width < 360 ? 76.0 : 72.0;
     return SliverAppBar.medium(
       title: Row(
         children: [
@@ -256,7 +257,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       bottom: subtitle == null
           ? null
           : PreferredSize(
-              preferredSize: const Size.fromHeight(60),
+              preferredSize: Size.fromHeight(subtitleHeight),
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Padding(

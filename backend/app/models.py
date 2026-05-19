@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, ForeignKey, Enum, DateTime, Text, JSON
+from sqlalchemy import Column, String, Integer, ForeignKey, Enum, DateTime, Text, JSON, Boolean
 from sqlalchemy.orm import relationship
 from .database import Base
 import enum
@@ -40,6 +40,7 @@ class Norm(Base):
     __tablename__ = "norms"
     id = Column(String, primary_key=True, default=generate_uuid)
     name = Column(String, unique=True, index=True)
+    is_active = Column(Boolean, nullable=False, default=True)
 
 class Grade(Base):
     __tablename__ = "grades"

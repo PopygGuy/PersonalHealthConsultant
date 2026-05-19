@@ -6,6 +6,7 @@ from typing import List
 import re
 from ..database import get_db
 from .. import models, schemas, auth
+from ..audit import log_event
 
 router = APIRouter()
 LOGIN_RE = re.compile(r"^[a-zA-Z0-9._]{3,32}$")
@@ -106,6 +107,13 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db), current
         db.rollback()
         raise HTTPException(status_code=400, detail="Пользователь с таким логином уже существует")
     db.refresh(db_user)
+    log_event(
+        "user_created",
+        actor=current_user.login,
+        user_id=db_user.id,
+        user_login=db_user.login,
+        user_role=db_user.role.value,
+    )
     return _user_to_schema(db_user, db)
 
 @router.put("/users/{user_id}", response_model=schemas.User)
@@ -142,12 +150,27 @@ def update_user(
 
     db.commit()
     db.refresh(db_user)
+    log_event(
+        "user_updated",
+        actor=current_user.login,
+        user_id=db_user.id,
+        user_login=db_user.login,
+    )
     return _user_to_schema(db_user, db)
 
 @router.delete("/users/{user_id}")
 def delete_user(user_id: str, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     if current_user.role != models.UserRole.admin:
         raise HTTPException(status_code=403, detail="Not authorized")
-    db.query(models.User).filter(models.User.id == user_id).delete()
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if db_user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    db.delete(db_user)
     db.commit()
+    log_event(
+        "user_deleted",
+        actor=current_user.login,
+        user_id=user_id,
+        user_login=db_user.login,
+    )
     return {"ok": True}

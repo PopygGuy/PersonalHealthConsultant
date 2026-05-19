@@ -4,6 +4,7 @@ from typing import List, Optional
 from pydantic import BaseModel
 from ..database import get_db
 from .. import models, auth
+from ..audit import log_event
 
 router = APIRouter()
 
@@ -83,6 +84,14 @@ def update_steps(stats: StepStatsCreate, db: Session = Depends(get_db), current_
     
     db.commit()
     db.refresh(db_stats)
+    log_event(
+        "steps_saved",
+        actor=current_user.login,
+        user_id=current_user.id,
+        date=db_stats.date,
+        steps=db_stats.steps,
+        goal=db_stats.goal,
+    )
     
     return StepStats(
         id=db_stats.id,

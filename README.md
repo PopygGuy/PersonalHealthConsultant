@@ -257,6 +257,53 @@ build/app/outputs/flutter-apk/app-release.apk
 
 Пользователь устанавливает APK и вводит только логин и пароль. Учетные записи создаются в кабинете администратора.
 
+## Аудит и логи API
+
+В backend включен аудит действий пользователей и запросов API.
+
+### Где лежат логи
+
+- основной аудит-файл: `backend/logs/audit.log`
+- ротация файлов: `audit.log.1`, `audit.log.2`, ... (до 5 файлов)
+- размер одного файла до ротации: ~2 MB
+
+### Что логируется
+
+- вход в систему: событие `login_success`
+- выход из системы: событие `logout_success`
+- все запросы `GET/POST/PUT/DELETE`: событие `http_request`
+- CRUD-события по ключевым сущностям:
+  - `norm_created`, `norm_deleted`, `norm_status_updated`
+  - `faculty_created`, `faculty_deleted`
+  - `group_created`, `group_deleted`
+  - `user_created`, `user_updated`, `user_deleted`
+  - `grade_created`, `grade_updated`
+  - `steps_saved`
+
+### Примеры строк аудита
+
+```text
+2026-05-19 10:20:31 | INFO | AUDIT event=login_success login=teacher role=teacher ip=192.168.1.50
+2026-05-19 10:20:31 | INFO | AUDIT event=http_request method=POST path=/token status=200 login=anonymous role=- ip=192.168.1.50 duration_ms=34
+2026-05-19 10:21:05 | INFO | AUDIT event=norm_created actor=teacher role=teacher norm_id=... norm_name=Бег 100м is_active=True
+2026-05-19 10:22:10 | INFO | AUDIT event=norm_status_updated actor=teacher role=teacher norm_id=... norm_name=Бег 100м is_active=False
+2026-05-19 10:24:43 | INFO | AUDIT event=logout_success login=teacher role=teacher ip=192.168.1.50
+```
+
+### Быстрый просмотр логов
+
+Windows PowerShell:
+
+```powershell
+Get-Content .\backend\logs\audit.log -Tail 100
+```
+
+Linux (VPS):
+
+```bash
+tail -n 100 /opt/phc/backend/logs/audit.log
+```
+
 ## Почему проект полезен для вуза
 
 - снижает нагрузку на преподавателя при контроле нормативов;

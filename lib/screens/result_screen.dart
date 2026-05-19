@@ -168,38 +168,80 @@ class ResultScreen extends StatelessWidget {
               ),
             ),
             SizedBox(height: 16 * ui),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildMacroCard(
-                    context,
-                    "Белки",
-                    "${day.protein}г",
-                    Colors.blue,
-                    ui,
-                  ),
-                ),
-                SizedBox(width: 12 * ui),
-                Expanded(
-                  child: _buildMacroCard(
-                    context,
-                    "Жиры",
-                    "${day.fat}г",
-                    Colors.orange,
-                    ui,
-                  ),
-                ),
-                SizedBox(width: 12 * ui),
-                Expanded(
-                  child: _buildMacroCard(
-                    context,
-                    "Углеводы",
-                    "${day.carbs}г",
-                    Colors.green,
-                    ui,
-                  ),
-                ),
-              ],
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final isCompact = constraints.maxWidth < 360;
+                if (isCompact) {
+                  return Column(
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildMacroCard(
+                              context,
+                              "Белки",
+                              "${day.protein}г",
+                              Colors.blue,
+                              ui,
+                            ),
+                          ),
+                          SizedBox(width: 10 * ui),
+                          Expanded(
+                            child: _buildMacroCard(
+                              context,
+                              "Жиры",
+                              "${day.fat}г",
+                              Colors.orange,
+                              ui,
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: 10 * ui),
+                      _buildMacroCard(
+                        context,
+                        "Углеводы",
+                        "${day.carbs}г",
+                        Colors.green,
+                        ui,
+                      ),
+                    ],
+                  );
+                }
+                return Row(
+                  children: [
+                    Expanded(
+                      child: _buildMacroCard(
+                        context,
+                        "Белки",
+                        "${day.protein}г",
+                        Colors.blue,
+                        ui,
+                      ),
+                    ),
+                    SizedBox(width: 12 * ui),
+                    Expanded(
+                      child: _buildMacroCard(
+                        context,
+                        "Жиры",
+                        "${day.fat}г",
+                        Colors.orange,
+                        ui,
+                      ),
+                    ),
+                    SizedBox(width: 12 * ui),
+                    Expanded(
+                      child: _buildMacroCard(
+                        context,
+                        "Углеводы",
+                        "${day.carbs}г",
+                        Colors.green,
+                        ui,
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
 
             SizedBox(height: 32 * ui),
