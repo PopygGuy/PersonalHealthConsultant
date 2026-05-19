@@ -261,6 +261,8 @@ build/app/outputs/flutter-apk/app-release.apk
 
 Ключевые изменения текущего релиза:
 
+Release summary (EN): improved mobile UI adaptivity, added norm availability controls, and introduced API audit logging.
+
 - улучшена адаптивность интерфейса на узких экранах (студент/преподаватель/администратор);
 - добавлена блокировка нормативов с разделением на доступные и недоступные;
 - усилена серверная валидация при работе с нормативами и оценками;
