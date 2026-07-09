@@ -166,6 +166,47 @@ build/app/outputs/flutter-apk/app-release.apk
 
 Этот файл можно передать пользователю. Пользователь устанавливает APK и входит по логину и паролю, которые созданы администратором.
 
+## 7.1. Раздача APK через QR-код (для демонстрации комиссии)
+
+В проект добавлен модуль раздачи:
+
+- `GET /distribution/apk` — скачивание APK из `backend/public/app-release.apk`;
+- `GET /distribution/qr.png` — PNG QR-код для ссылки на APK;
+- `GET /distribution/landing` — готовая веб-страница с QR-кодом и кнопкой скачивания.
+
+### Подготовка на VPS
+
+1. Обновить backend и зависимости:
+
+```bash
+cd /opt/phc
+git pull
+cd backend
+./.venv/bin/python -m pip install -r requirements.txt
+systemctl restart phc-api
+```
+
+2. Скопировать собранный APK на VPS в ожидаемый путь:
+
+```bash
+mkdir -p /opt/phc/backend/public
+cp /path/to/app-release.apk /opt/phc/backend/public/app-release.apk
+```
+
+Если APK лежит на локальном компьютере, передать его можно через `scp`:
+
+```bash
+scp build/app/outputs/flutter-apk/app-release.apk root@SERVER_IP:/opt/phc/backend/public/app-release.apk
+```
+
+3. Открыть страницу для комиссии:
+
+```text
+http://SERVER_IP:8000/distribution/landing
+```
+
+На этой странице отображается QR-код и прямая кнопка скачивания APK.
+
 ## 8. Выдача логинов и паролей
 
 Порядок работы:

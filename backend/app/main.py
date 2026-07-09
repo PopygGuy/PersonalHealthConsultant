@@ -11,7 +11,7 @@ import time
 from .database import get_db
 from . import models, schemas, auth
 from .config import settings
-from .routers import structures, users, norms, grades, steps, maintenance
+from .routers import structures, users, norms, grades, steps, maintenance, distribution
 from .audit import audit_logger, resolve_actor_from_request, log_event
 
 app = FastAPI(
@@ -38,6 +38,7 @@ app.include_router(norms.router, tags=["norms"])
 app.include_router(grades.router, tags=["grades"])
 app.include_router(steps.router, tags=["steps"])
 app.include_router(maintenance.router, tags=["maintenance"])
+app.include_router(distribution.router, tags=["distribution"])
 
 def _configure_audit_logging() -> None:
     backend_root = Path(__file__).resolve().parents[1]
