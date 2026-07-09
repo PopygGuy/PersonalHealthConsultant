@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart'; // for kIsWeb
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user.dart';
 import '../models/user_role.dart';
 import '../models/faculty.dart';
@@ -41,8 +42,48 @@ class ApiService {
 
     _dio.options.baseUrl = resolvedBaseUrl;
     print("API Base URL: ${_dio.options.baseUrl}");
-    _token = await _storage.read(key: _jwtTokenKey);
+    _token = await _readStoredToken();
     // Ideally, validate token or fetch user profile here
+  }
+
+  Future<String?> _readStoredToken() async {
+    if (kIsWeb) {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_jwtTokenKey);
+    }
+    try {
+      return await _storage.read(key: _jwtTokenKey);
+    } catch (e) {
+      print('Token read error: $e');
+      return null;
+    }
+  }
+
+  Future<void> _persistToken(String token) async {
+    if (kIsWeb) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_jwtTokenKey, token);
+      return;
+    }
+    try {
+      await _storage.write(key: _jwtTokenKey, value: token);
+    } catch (e) {
+      // Do not fail login if token persistence fails.
+      print('Token persist error: $e');
+    }
+  }
+
+  Future<void> _clearStoredToken() async {
+    if (kIsWeb) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_jwtTokenKey);
+      return;
+    }
+    try {
+      await _storage.delete(key: _jwtTokenKey);
+    } catch (e) {
+      print('Token delete error: $e');
+    }
   }
 
   String _defaultBaseUrl() {
@@ -104,7 +145,7 @@ class ApiService {
       if (response.statusCode == 200) {
         final data = response.data;
         _token = data['access_token'];
-        await _storage.write(key: _jwtTokenKey, value: _token);
+        await _persistToken(_token!);
         // Immediately fetch full profile (with faculty/group ids and names).
         final me = await getMe();
         if (me != null) {
@@ -151,7 +192,7 @@ class ApiService {
     }
     _token = null;
     _currentUser = null;
-    await _storage.delete(key: _jwtTokenKey);
+    await _clearStoredToken();
   }
 
   // Helper for authenticated requests
