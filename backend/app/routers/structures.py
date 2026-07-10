@@ -46,6 +46,18 @@ def delete_faculty(faculty_id: str, db: Session = Depends(get_db), current_user:
     db_faculty = db.query(models.Faculty).filter(models.Faculty.id == faculty_id).first()
     if db_faculty is None:
         raise HTTPException(status_code=404, detail="Факультет не найден")
+
+    linked_groups = db.query(models.Group).filter(models.Group.faculty_id == faculty_id).count()
+    linked_users = db.query(models.User).filter(models.User.faculty_id == faculty_id).count()
+    if linked_groups > 0 or linked_users > 0:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Нельзя удалить факультет: сначала удалите или перепривяжите связанные "
+                f"группы ({linked_groups}) и пользователей ({linked_users})."
+            ),
+        )
+
     db.delete(db_faculty)
     db.commit()
     log_event(

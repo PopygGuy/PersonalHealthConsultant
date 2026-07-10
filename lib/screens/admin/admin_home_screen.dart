@@ -1090,8 +1090,19 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                       onPressed: () async {
                         final confirmed = await _confirmDelete(title: 'Удалить факультет?', content: 'Удалить ${f.name}?');
                         if (confirmed) {
-                          await _api.deleteFaculty(f.id);
-                          _loadData();
+                          try {
+                            await _api.deleteFaculty(f.id);
+                            await _loadData();
+                          } catch (e) {
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  e.toString().replaceFirst('Exception: ', ''),
+                                ),
+                              ),
+                            );
+                          }
                         }
                       },
                     ),

@@ -255,13 +255,19 @@ class ApiService {
     }
   }
 
-  Future<bool> deleteFaculty(String id) async {
+  Future<void> deleteFaculty(String id) async {
     try {
       await delete('/faculties/$id');
-      return true;
+      return;
+    } on DioException catch (e) {
+      final detail = e.response?.data is Map<String, dynamic>
+          ? (e.response?.data['detail']?.toString() ??
+              'Ошибка удаления факультета')
+          : 'Ошибка удаления факультета';
+      throw Exception(detail);
     } catch (e) {
       print('deleteFaculty error: $e');
-      return false;
+      throw Exception('Ошибка удаления факультета');
     }
   }
 
